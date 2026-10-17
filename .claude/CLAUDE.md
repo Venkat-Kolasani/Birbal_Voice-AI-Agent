@@ -30,7 +30,7 @@ Invoke the skill **before** starting the matching work.
 | Designing the UI direction and tokens (`web/app.css`) | `ecc:frontend-design-direction`, then `impeccable:impeccable` |
 | Polishing UI details (spacing, states, motion) | `ecc:make-interfaces-feel-better` |
 | Accessibility pass on every page | `ecc:frontend-a11y` |
-| Testing `index.html` / `board.html` / `review.html` in a browser | `ecc:browser-qa` |
+| Testing `index.html` / `review.html` in a browser | `ecc:browser-qa` |
 | Recording the backup demo video | `ecc:ui-demo` |
 | Context getting long or switching sessions | `ecc:save-session` / `ecc:resume-session` |
 
