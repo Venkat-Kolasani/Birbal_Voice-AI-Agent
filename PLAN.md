@@ -294,7 +294,7 @@ Redacted: 1 partner name (generalised), 1 metric (generalised), 1 person (role o
 
 ---
 
-## 8. Solo build-day timeline (~7 h; re-cut when the 10 AM workbook lands)
+## 8. Solo build-day timeline (superseded: the event is 4 h and pre-written code is allowed; see AGENTS.md §7 and §7c)
 
 **Tonight (prep; check the event rules on pre-written code):**
 - [ ] Sign up and record the real numbers: Gemini key + `aistudio.google.com/rate-limit`, Deepgram (credit shown?), Sarvam (₹100 or ₹1,000?), Groq, ElevenLabs.
