@@ -1,6 +1,6 @@
 # AGENTS.md — Birbal build instructions
 
-You are building **Birbal**, a voice agent that interviews a problem owner and produces a structured, redacted problem brief that builders can act on. It is for Challenge 2 (Problem Intake Agent) at the AI Garage × Paytm Voice AI Buildathon. The build is **solo** and takes **one day**.
+You are building **Birbal**, a voice agent that interviews a problem owner and produces a structured, redacted problem brief that builders can act on. It is for Challenge 2 (Problem Intake Agent) at the AI Garage × Paytm Voice AI Buildathon. The build is **solo**. The event is **4 hours** and pre-written code is allowed, so the product is built **before** the event; the 4 hours are for integration, unseen-input testing and rehearsal. Judges care most about an **enterprise-grade demo**.
 
 Tagline: *"Akbar had Birbal. Now every builder does."* · *Problem bolo, Birbal samjhega.*
 
@@ -17,7 +17,7 @@ Tagline: *"Akbar had Birbal. Now every builder does."* · *Problem bolo, Birbal 
 5. **Redaction is enforced by code, not by asking an LLM.** Lower versions are generated only from already-redacted text.
 6. **The 90-minute gate.** The cascade voice spike must have mic → STT → Talker → TTS → speaker with barge-in working within **90 minutes from the start of step 1**. If not, switch to Plan B (Gemini Live, see `PLAN.md` §5) and log it in `docs/DECISIONS.md`.
 7. **Credit budget.** Sarvam TTS is for the final demo and rehearsals only. Use Deepgram Aura-2 while developing.
-8. **One day, solo.** The smallest complete thing wins. **Our** pages (`board.html`, `review.html`) are plain HTML + JS with no build step and no framework. The voice connection uses the client page that ships with Pipecat's SmallWebRTC example (or the `pipecat-ai-small-webrtc-prebuilt` package; verify the name). Never hand-write a WebRTC client.
+8. **Solo, built before the event.** The smallest complete thing wins. **Our** pages (`index.html`, `review.html`) are plain HTML + JS with no build step and no framework. The voice connection uses the client page that ships with Pipecat's SmallWebRTC example (or the `pipecat-ai-small-webrtc-prebuilt` package; verify the name). Never hand-write a WebRTC client.
 
 ## 2. Requirements (acceptance checklist; all must pass)
 
@@ -65,7 +65,7 @@ Browser ─WebRTC (Pipecat SmallWebRTCTransport)─► Python server (Pipecat + 
   mic ► Silero VAD (barge-in) ► Deepgram STT ► user text
         ├─► TALKER  (Gemini Flash; short prompt + gap report) ─► TTS (Aura-2 dev / Sarvam demo) ► speaker
         └─► SCRIBE  (async LLM, JSON) ─► LEDGER ─► CONTROLLER (pure code) ─► gap report for next turn
-  board.html  ◄─ GET /ledger (poll 1 s)
+  index.html (Notes panel) ◄─ GET /ledger (poll 1 s)
   review.html ◄─ POST /brief → canonical brief → redact → LLM wording pass → leak check → 3 versions → POST /approve → export .md/.json
 ```
 
@@ -98,7 +98,7 @@ server/
     controller.py # scoring + priority → GapReport (pure functions)
     brief.py      # canonical brief, redaction, leak check, 3 versions
   tests/          # controller + leak check + redaction unit tests; persona fixtures
-web/  board.html  review.html
+web/  index.html  review.html  app.css
 docs/ IMPLEMENTATION_LOG.md  ISSUES.md  DECISIONS.md
 ```
 
@@ -133,14 +133,14 @@ docs/ IMPLEMENTATION_LOG.md  ISSUES.md  DECISIONS.md
 
 Known limit, to state in the pitch: paraphrases are not caught, which is why step 1 happens first.
 
-## 7. Build order (each step has a "done when"; re-cut after the 10 AM workbook)
+## 7. Build order (pre-event; each step has a "done when")
 
 | # | Step | Done when |
 |---|---|---|
 | 0 | Keys in `.env`; record the real free limits in `docs/DECISIONS.md` | Every key works with a 1-line curl/SDK call |
 | 1 | **Gate (≤90 min from the start of this step):** Pipecat SmallWebRTC example and its client page → Deepgram STT + Gemini Talker + Aura-2 TTS. In the last 10 min, prove the per-turn injection (below) | You talk, it answers, interrupting it stops it, and an injected controller line changes the next question |
 | 2 | `brain/schema.py` + `controller.py` + tests | Scoring/priority unit tests pass |
-| 3 | Scribe hook + `/ledger` + `board.html` (9 rows, chips) | Rows fill and the focus changes while talking |
+| 3 | Scribe hook + `/ledger` + Notes panel in `index.html` (9 rows, chips) | Rows fill and the focus changes while talking |
 | 4 | Prompt tuning on 3 personas: vague, chatty, secretive | It probes, parks, asks consent, names contradictions |
 | 5 | `brief.py` + `/brief` + leak check + tests | A planted secret is blocked; tests pass |
 | 6 | `review.html` + Approve + export; switch TTS to Sarvam | Approve → `.md` + `.json` download |
@@ -149,9 +149,11 @@ Known limit, to state in the pitch: paraphrases are not caught, which is why ste
 
 ## 7b. UI: minimalist, enterprise grade (industry leaders will use it)
 
-**Pages.** There are three, sharing one stylesheet `web/app.css`:
-- `index.html`: the interview. After the gate, replace Pipecat's example page with our own page built on Pipecat's JS client from a CDN (verify the package names and versions). Never hand-write WebRTC.
-- `board.html`: Birbal's Notes, live.
+**Pages.** There are two, sharing one stylesheet `web/app.css`:
+- `index.html`: the start screen, then the live interview. The live interview is a split view: the conversation on the left, **Birbal's Notes** live on the right, so judges see the notes fill while they talk.
+  - After the gate, replace Pipecat's example page with our own page built on Pipecat's JS client from a CDN (verify the package names and versions). Never hand-write WebRTC.
+- `review.html`: the Birbal Brief, version switcher, private-item toggles, leak-check status, Approve, export.
+- Full wireframes and design tokens are in `docs/UI.md`; that file is the UI source of truth.
 - `review.html`: the Birbal Brief, with redaction toggles, Approve and export.
 
 **Look.** Think Linear, Stripe Dashboard or Vercel:
@@ -178,6 +180,15 @@ Known limit, to state in the pitch: paraphrases are not caught, which is why ste
 - No layout shift as rows arrive.
 
 **Copy.** Short, calm, professional. No AI hype words.
+
+## 7c. Event day (4 hours)
+
+| Time | Do |
+|---|---|
+| 0:00–0:30 | Read the workbook; if it mandates a stack, map it onto `brain/` (the transport only); network + mic check; hotspot ready |
+| 0:30–2:00 | Unseen-input testing: 5 problems from outside fintech; fix prompts; log every issue |
+| 2:00–3:00 | Polish only (no new features); switch TTS to Sarvam; final redaction checks |
+| 3:00–4:00 | Rehearse the demo 3×; record the backup video; charge the laptop |
 
 ## 8. Coding rules
 
