@@ -46,3 +46,13 @@ Template:
 - Decision: three plain HTML pages sharing one token-based stylesheet: neutral palette with one accent, Inter/system font, light and dark themes, WCAG AA. Full spec in AGENTS.md §7b.
 - Alternatives: Pipecat's example client UI as-is (fine for the gate, but looks like a dev tool); a React/Vite app (adds a build step for a solo one-day build).
 - Consequence: after the gate, the interview page is rebuilt on Pipecat's JS client from a CDN, styled to match.
+
+## D-006 — Build before the event; 4-hour event = test and rehearse  (2026-10-17)
+- Context: the event is 4 hours and pre-written code is allowed; judges care most about an enterprise-grade demo.
+- Decision: build the full product beforehand (AGENTS.md §7). Use the event for workbook mapping, unseen-input testing, polish and rehearsal (AGENTS.md §7c).
+- Consequence: the 90-minute gate still applies to the pre-event spike.
+
+## D-007 — Two-page UI with a split live view  (2026-10-17)
+- Context: the strongest demo moment is the notes filling while someone talks; separate pages would hide it.
+- Decision: `index.html` (start + live split view: conversation and Birbal's Notes) and `review.html`. Peacock-teal accent, Inter + Source Serif 4. Spec in docs/UI.md.
+- Alternatives: three pages (board separate): needs two windows during the demo.
