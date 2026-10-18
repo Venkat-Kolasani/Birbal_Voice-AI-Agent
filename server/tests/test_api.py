@@ -67,8 +67,8 @@ def test_unknown_or_malicious_session_id(client):
 
 
 def test_turn_without_key_is_clear_error(client, monkeypatch):
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    for v in ("GOOGLE_API_KEY", "GOOGLE_API_KEYS", "GROQ_API_KEY", "GROQ_API_KEYS", "ALT_LLM_KEY", "ALT_LLM_KEYS"):
+        monkeypatch.delenv(v, raising=False)
     sid = client.post("/api/start?mode=text").json()["id"]
     assert client.post(f"/api/turn?s={sid}", json={"text": "hello"}).status_code == 503
 
