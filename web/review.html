@@ -17,7 +17,7 @@
     <button class="btn" id="dl" aria-haspopup="true" aria-expanded="false"></button>
     <div class="menu" id="menu" hidden></div>
   </div>
-  <a class="btn ghost" href="/" title="Start a new interview">New interview</a>
+  <a class="btn ghost" href="/start" title="Start a new interview">New interview</a>
   <button class="btn" id="share" hidden title="Copy the read-only link to the approved builder brief"></button>
   <button class="btn primary" id="approve"></button>
   <button class="btn ghost" id="theme"></button>
@@ -58,7 +58,7 @@ initTheme();
 const $ = (id) => document.getElementById(id);
 const sid = new URLSearchParams(location.search).get("s");
 const token = location.pathname.startsWith("/b/") ? location.pathname.slice(3) : null;  // read-only shared view
-if (!sid && !token) location.href = "/";
+if (!sid && !token) location.href = "/start";
 const q = (path) => `${path}${path.includes("?") ? "&" : "?"}s=${sid}`;
 let AUD = [["me", "For me", "Everything, with quotes"], ["builders", "For builders", "Redacted, action-ready"], ["everyone", "For everyone", "Three-line teaser"]];
 let data = null, cur = "builders";
@@ -67,7 +67,7 @@ if (token) {
   document.title = "Birbal · Shared brief";
   document.querySelector(".crumb").textContent = "Shared brief";
   ["approve", "dl"].forEach((id) => $(id).hidden = true);
-  document.querySelector('a.btn.ghost[href="/"]').hidden = true;
+  document.querySelector('a.btn.ghost[href="/start"]').hidden = true;
 }
 $("dl").innerHTML = "Download " + icon("down");
 $("share").innerHTML = icon("arrow") + " Copy share link";
@@ -80,7 +80,7 @@ $("approve").innerHTML = "Approve " + icon("arrow");
 async function load(p = token ? api(`/api/shared/${token}`) : api(q("/api/brief"))) {
   try { data = await p; render(); }
   catch (e) {
-    if (!data) $("body").innerHTML = `<p style="font-family:var(--font);color:var(--muted)">${esc(e.message)} <a href="/">Start a new interview</a></p>`;
+    if (!data) $("body").innerHTML = `<p style="font-family:var(--font);color:var(--muted)">${esc(e.message)} <a href="/start">Start a new interview</a></p>`;
     else toast(e.message);
   }
 }
