@@ -109,10 +109,19 @@ class Session:
 
     # --- views ------------------------------------------------------------
     def gap(self) -> GapReport:
+        # Consent is asked once. If the owner's next answer didn't settle it, default to hidden (fail closed) and
+        # move on; the Review page can change it. Nagging three times costs the interview.
+        for s in self.ledger.sensitive:
+            if s.choice is None and s.asked_turn is not None and self._owner_turns > s.asked_turn:
+                s.choice, s.auto, s.decided_turn = "generalise", True, self._owner_turns
+                self.dirty = True
         return gap_report(self.ledger, self.minutes())
 
     def note(self) -> str:
-        return controller_note(self.gap(), self.ledger)
+        gr = self.gap()
+        if gr.focus == "consent":
+            gr.pending_consent[0].asked_turn = self._owner_turns
+        return controller_note(gr, self.ledger)
 
     def state(self) -> dict:
         gr = self.gap()
