@@ -3,12 +3,13 @@
 let pc = null, stream = null, audioEl = null, raf = 0, ctx = null;
 
 async function connect({ session, onLevel = () => {}, onError = () => {} } = {}) {
+  const cfg = await fetch("/api/voice").then((r) => r.json()).catch(() => ({}));
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (e) {
     throw new Error("Mic blocked. Allow microphone access in your browser, or use “Type instead”.");
   }
-  pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  pc = new RTCPeerConnection({ iceServers: cfg.ice || [{ urls: "stun:stun.l.google.com:19302" }] });
   stream.getTracks().forEach((t) => pc.addTrack(t, stream));
   pc.createDataChannel("chat");
   audioEl = new Audio(); audioEl.autoplay = true;
