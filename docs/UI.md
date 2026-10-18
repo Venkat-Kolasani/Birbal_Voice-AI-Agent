@@ -52,7 +52,7 @@ The accent is a peacock teal: a quiet India nod, and not the indigo every SaaS u
 │                                                                      │
 │     [ ● Start interview ]        Language  Auto · English · हिंदी     │
 │                                                                      │
-│     ⌂ Nothing leaves this device until you approve.                  │
+│     ⌂ Nothing is shared with builders until you approve.                  │
 │     ~8 minutes · You can stop anytime                                │
 └──────────────────────────────────────────────────────────────────────┘
 ```
