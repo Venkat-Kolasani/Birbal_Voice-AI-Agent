@@ -31,21 +31,33 @@ from brain.session import Session
 NOTE_PREFIX = "[controller]"
 
 
-def rewrite(msgs: list[dict], note: str, last: str | None) -> list[dict]:
-    """Attach this turn's controller note to the last user message, removing last turn's note.
+# Voice resends the whole context every turn. Keeping only the recent turns holds a call near ~1.2k tokens, which
+# fits Groq's 8K TPM; older facts reach the Talker through the controller note's "Last noted" / "Already clear".
+MAX_CONTEXT_MESSAGES = int(os.getenv("MAX_CONTEXT_MESSAGES", "10"))
+
+
+def rewrite(msgs: list[dict], note: str, last: str | None, keep: int = MAX_CONTEXT_MESSAGES) -> list[dict]:
+    """Attach this turn's controller note to the last user message, removing last turn's note; keep recent turns only.
 
     The note rides on a user message (exactly like text mode's talker_messages) rather than a "developer" message:
     Pipecat sends "developer" as-is to Groq (supports_developer_role=True), which may reject it.
     """
     suffix = lambda n: "\n\n" + n  # noqa: E731
+    role = lambda m: m.get("role") if isinstance(m, dict) else None  # noqa: E731
     out = []
     for m in msgs:
-        c = m.get("content")
+        # Pipecat may store provider-specific objects (LLMSpecificMessage, e.g. Gemini thought signatures) in the
+        # context. They are not dicts; keep them exactly as they are.
+        c = m.get("content") if isinstance(m, dict) else None
         if last is not None and isinstance(c, str) and c.endswith(suffix(last)):
             m = {**m, "content": c[: -len(suffix(last))]}
         out.append(m)
+    if keep and len(out) > keep:
+        out = out[-keep:]
+        while out and role(out[0]) != "user":  # never start the window on a model turn
+            out = out[1:]
     for i in range(len(out) - 1, -1, -1):
-        if out[i].get("role") == "user" and isinstance(out[i].get("content"), str):
+        if role(out[i]) == "user" and isinstance(out[i].get("content"), str):
             out[i] = {**out[i], "content": out[i]["content"] + suffix(note)}
             return out
     return out + [{"role": "user", "content": note}]  # no user turn yet
@@ -137,6 +149,11 @@ def make_llm(lang: str):
         from pipecat.services.google.llm import GoogleLLMService
         return GoogleLLMService(api_key=keys.pick("gemini"), settings=GoogleLLMService.Settings(
             model=GEMINI_TALKER_MODEL, system_instruction=system, temperature=TALKER_TEMPERATURE))
+    if talker_provider() == "alt":
+        from pipecat.services.openai.llm import OpenAILLMService
+        from brain.llm import ALT_BASE, ALT_MODEL
+        return OpenAILLMService(api_key=keys.pick("alt"), base_url=ALT_BASE, settings=OpenAILLMService.Settings(
+            model=ALT_MODEL, system_instruction=system, temperature=TALKER_TEMPERATURE))
     from pipecat.services.groq.llm import GroqLLMService
     return GroqLLMService(api_key=keys.pick("groq"), settings=GroqLLMService.Settings(
         model=GROQ_MODEL, system_instruction=system, temperature=TALKER_TEMPERATURE,
@@ -171,8 +188,8 @@ def voice_ready(lang: str = "auto") -> tuple[bool, str]:
     if not keys.has(stt):
         extra = " (Kannada speech needs Sarvam)" if lang == "kn" else ""
         return False, f"Add {keys.ENV[stt]} to .env for voice{extra}."
-    if not (keys.has("gemini") or keys.has("groq")):
-        return False, "Add GOOGLE_API_KEY (or GROQ_API_KEY) to .env for voice."
+    if not (keys.has("gemini") or keys.has("groq") or keys.has("alt")):
+        return False, "Add GOOGLE_API_KEY, GROQ_API_KEY or ALT_LLM_KEY to .env for voice."
     tts = tts_provider(lang)
     if lang in ("hi", "kn") and tts == "aura":
         return False, "Hindi/Kannada voice needs SARVAM_API_KEY (Aura speaks English only)."
