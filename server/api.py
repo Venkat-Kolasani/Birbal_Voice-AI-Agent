@@ -67,6 +67,11 @@ def _cancel(sid: str) -> None:
 
 
 @app.get("/")
+def landing():
+    return FileResponse(WEB / "landing.html")
+
+
+@app.get("/start")
 def index():
     return FileResponse(WEB / "index.html")
 
