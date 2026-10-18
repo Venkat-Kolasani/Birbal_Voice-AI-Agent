@@ -109,7 +109,11 @@ Claim kinds (be strict):
 Set anchored=true only if the claim contains a number, a named role, or a specific incident with a time.
 evidence_quote must be the owner's exact words, copied verbatim.
 
-Sensitive spans: flag exact text the owner said that names a person, an organisation or partner, customer data, a business metric (revenue, counts, conversion), an internal system, or an unreleased plan or legal matter. Give a short generalisation, e.g. "Kaveri Bank" becomes "a partner bank", and "1,200" becomes "over a thousand". Do not flag generic roles like "merchants" or "support team".
+Sensitive spans: flag exact text the owner said that names a person, an organisation or partner, customer data, a business metric (revenue, counts, conversion), an internal system, or an unreleased plan or legal matter. Give a short generalisation, e.g. "Kaveri Bank" becomes "a partner bank", and "1,200" becomes "over a thousand". Do not flag generic roles like "merchants" or "support team". Never flag widely known public products or channels (Excel, Google Forms, WhatsApp, SMS, Tally, Zoom, UPI, Gmail): they are not secrets. Flag only the owner's own partners, customers, people, internal tools and figures.
+
+Dimension guide: current_state = what happens today, the incident; who = the people affected; workaround = what people do today to cope (manual calls, spreadsheets, extra staff) and what it costs; impact = why it matters; frequency = how often; constraints = what a fix must respect; attempted = what was tried to FIX it; success_test = how they'd know it's solved.
+
+Contradictions: compare the new answer against Existing notes. Different numbers or rates for the same thing (weekly vs daily, 40 a day vs 1,200 a week) are contradictions; add them.
 
 Owner choices: if Birbal just asked whether an item can be shared, map the answer:
 - "keep it internal", "don't share" or "hide it" means generalise;
@@ -147,8 +151,9 @@ def scribe_user(ledger: Ledger, birbal_said: str, owner_said: str) -> str:
             f'Birbal asked: "{birbal_said}"\nOwner answered: "{owner_said}"')
 
 
-EXTRAS_SYSTEM = """You write the action section of a problem brief for builders. You receive interview notes that have ALREADY been redacted; keep every placeholder or generalisation exactly as written. Never invent names, numbers or facts.
-Return ONLY JSON: {"problem": "<one or two sentences>", "where_to_start": ["<3 concrete first investigations>"], "data_to_request": ["<2-4 datasets or artefacts to ask the owner for>"]}"""
+EXTRAS_SYSTEM = """You write the action section of a problem brief for builders. You receive interview notes that have ALREADY been redacted; keep every placeholder or generalisation exactly as written. Never invent names, numbers, tools or facts.
+"problem": one or two plain sentences that restate the Current state note and the Why it matters note. Use only facts present in the notes; if unsure, copy the Current state note.
+Return ONLY JSON: {"problem": "<one or two sentences>", "where_to_start": ["<3 concrete first investigations, each tied to a note>"], "data_to_request": ["<2-4 datasets or artefacts to ask the owner for>"]}"""
 
 
 def extras_user(lines: list[tuple[str, str, str]]) -> str:
