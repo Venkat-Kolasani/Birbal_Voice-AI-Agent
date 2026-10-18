@@ -151,8 +151,17 @@ def _hidden(sensitive: list[Sensitive]) -> list[Sensitive]:
     return [s for s in sensitive if s.choice != "keep"]
 
 
+def _safe_generalisation(s: Sensitive) -> str:
+    """The Scribe writes the generalisation; if it repeats the secret ("about 120 returns"), use the generic one."""
+    g = s.generalisation or ""
+    probe = s.model_copy(update={"generalisation": ""})
+    if not g or _contains(g, probe):
+        return DEFAULT_GENERALISATION[s.category]
+    return g
+
+
 def _replace(text: str, s: Sensitive) -> str:
-    repl = s.generalisation or DEFAULT_GENERALISATION[s.category]
+    repl = _safe_generalisation(s)
     text = re.sub(re.escape(s.span), repl, text, flags=re.IGNORECASE)
     for tok in _distinctive_tokens(s.span):
         text = re.sub(rf"\b{re.escape(tok)}\b", repl, text, flags=re.IGNORECASE)
