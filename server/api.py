@@ -25,7 +25,7 @@ from brain.session import Session, SessionStore  # noqa: E402
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("birbal.api")
 WEB = ROOT / "web"
-EXPORTS = ROOT / "exports"
+EXPORTS = Path(os.getenv("BIRBAL_EXPORTS", ROOT / "exports"))
 
 app = FastAPI(title="Birbal")
 
@@ -280,11 +280,23 @@ async def export(s: str, audience: Audience, fmt: Literal["md", "json"]):
 _webrtc = None
 
 
+def _ice_servers() -> list[dict]:
+    """STUN always; TURN when configured (TURN_URLS comma-separated, TURN_USERNAME, TURN_CREDENTIAL).
+    A cloud host can't receive WebRTC audio directly; a TURN relay carries it over TCP/TLS 443."""
+    servers = [{"urls": "stun:stun.l.google.com:19302"}]
+    urls = [u.strip() for u in os.getenv("TURN_URLS", "").split(",") if u.strip()]
+    if urls:
+        servers.append({"urls": urls, "username": os.getenv("TURN_USERNAME", ""),
+                        "credential": os.getenv("TURN_CREDENTIAL", "")})
+    return servers
+
+
 def _handler():
     global _webrtc
     if _webrtc is None:
+        from pipecat.transports.smallwebrtc.connection import IceServer
         from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler
-        _webrtc = SmallWebRTCRequestHandler()
+        _webrtc = SmallWebRTCRequestHandler(ice_servers=[IceServer(**s) for s in _ice_servers()])
     return _webrtc
 
 
@@ -292,7 +304,7 @@ def _handler():
 def voice_status(lang: Lang = "auto"):
     import bot
     ok, why = bot.voice_ready(lang)
-    return {"ready": ok, "why": why}
+    return {"ready": ok, "why": why, "ice": _ice_servers()}
 
 
 @app.post("/api/offer")
