@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Birbal · Review brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="bar">
+  <a class="brand" href="/" style="color:inherit;text-decoration:none"><span class="mark">B</span>Birbal</a>
+  <span class="crumb">Review brief</span>
+  <div class="spacer"></div>
+  <div style="position:relative">
+    <button class="btn" id="dl" aria-haspopup="true" aria-expanded="false"></button>
+    <div class="menu" id="menu" hidden></div>
+  </div>
+  <a class="btn ghost" href="/" title="Start a new interview">New interview</a>
+  <button class="btn" id="share" hidden title="Copy the read-only link to the approved builder brief"></button>
+  <button class="btn primary" id="approve"></button>
+  <button class="btn ghost" id="theme"></button>
+</div>
+
+<main class="review">
+  <aside class="rail">
+    <div>
+      <div class="label" style="margin-bottom:8px">Version</div>
+      <div class="versions" id="versions"></div>
+    </div>
+    <div>
+      <div class="label" style="margin-bottom:10px">Private items <span id="pcount" class="num"></span></div>
+      <div class="priv" id="priv"></div>
+    </div>
+    <div class="stats" id="stats"></div>
+  </aside>
+  <section class="doc">
+    <article class="paper" aria-live="polite">
+      <div class="ph"><h2 id="title">Birbal Brief</h2><div class="spacer"></div><span id="badge"></span></div>
+      <div class="pb" id="body">
+        <div class="skeleton" style="width:70%"></div><div class="skeleton"></div><div class="skeleton" style="width:85%"></div>
+        <div class="skeleton" style="width:60%"></div>
+      </div>
+    </article>
+  </section>
+</main>
+
+<dialog id="confirm">
+  <div class="dh">Share this brief?</div>
+  <div class="db" id="confirmBody"></div>
+  <div class="df"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="doApprove">Approve and share</button></div>
+</dialog>
+
+<script src="/static/common.js"></script>
+<script>
+initTheme();
+const $ = (id) => document.getElementById(id);
+const sid = new URLSearchParams(location.search).get("s");
+const token = location.pathname.startsWith("/b/") ? location.pathname.slice(3) : null;  // read-only shared view
+if (!sid && !token) location.href = "/";
+const q = (path) => `${path}${path.includes("?") ? "&" : "?"}s=${sid}`;
+let AUD = [["me", "For me", "Everything, with quotes"], ["builders", "For builders", "Redacted, action-ready"], ["everyone", "For everyone", "Three-line teaser"]];
+let data = null, cur = "builders";
+if (token) {
+  AUD = AUD.slice(1);
+  document.title = "Birbal · Shared brief";
+  document.querySelector(".crumb").textContent = "Shared brief";
+  ["approve", "dl"].forEach((id) => $(id).hidden = true);
+  document.querySelector('a.btn.ghost[href="/"]').hidden = true;
+}
+$("dl").innerHTML = "Download " + icon("down");
+$("share").innerHTML = icon("arrow") + " Copy share link";
+$("share").onclick = async () => {
+  await navigator.clipboard.writeText(location.origin + data.share);
+  toast("Link copied. Anyone with it can read the builder and public versions.");
+};
+$("approve").innerHTML = "Approve " + icon("arrow");
+
+async function load(p = token ? api(`/api/shared/${token}`) : api(q("/api/brief"))) {
+  try { data = await p; render(); }
+  catch (e) {
+    if (!data) $("body").innerHTML = `<p style="font-family:var(--font);color:var(--muted)">${esc(e.message)} <a href="/">Start a new interview</a></p>`;
+    else toast(e.message);
+  }
+}
+
+function render() {
+  const vs = data.versions;
+  $("versions").innerHTML = AUD.map(([k, n, d], i) => {
+    const s = k === "me" ? "" : vs[k].safe ? `<span class="chip ok k">${icon("check")}</span>` : `<span class="chip danger k">${icon("x")}</span>`;
+    return `<button aria-pressed="${k === cur}" data-a="${k}"><span class="radio"></span><span><div>${n}</div><div style="font-size:12px;color:var(--faint)">${d}</div></span>${s}<kbd class="k" style="margin-left:6px">${i + 1}</kbd></button>`;
+  }).join("");
+  document.querySelectorAll("#versions button").forEach((b) => b.onclick = () => { cur = b.dataset.a; render(); });
+
+  data.private = data.private || [];
+  if (token) document.querySelectorAll(".rail > div:not(:first-child)").forEach((d) => d.hidden = true);
+  $("pcount").textContent = data.private.length ? `(${data.private.length})` : "";
+  $("priv").innerHTML = data.private.length ? data.private.map((p, i) => {
+    const c = p.choice || "generalise";
+    const opt = (v, l) => `<button aria-pressed="${c === v}" data-i="${i}" data-c="${v}">${l}</button>`;
+    return `<div class="p"><div class="nm"><span>${icon("lock")} ${esc(p.span)}</span><span class="cat">${CAT[p.category] || ""}</span></div>
+      <div class="seg" role="group" aria-label="Sharing for ${esc(p.span)}">${opt("keep", "Share as is")}${opt("generalise", "Hide name")}${opt("remove", "Remove")}</div>
+      ${p.generalisation && c === "generalise" ? `<div style="font-size:12px;color:var(--muted)">Builders see “${esc(p.generalisation)}”</div>` : ""}</div>`;
+  }).join("") : '<span style="color:var(--faint)">Nothing private was mentioned.</span>';
+  document.querySelectorAll("#priv .seg button").forEach((b) => b.onclick = () =>
+    load(api(q("/api/choice"), { method: "POST", body: { span: data.private[+b.dataset.i].span, choice: b.dataset.c } })));
+
+  const v = vs[cur], b = v.brief;
+  $("stats").hidden = !!token;
+  $("stats").innerHTML = token ? "" : `<span>Coverage</span><b class="num">${b.coverage || vs.me.brief.coverage} / 9</b>
+    <span>Open questions</span><b class="num">${vs.builders.brief.open_questions.length}</b>
+    <span>Interview length</span><b class="num">${mmss(data.elapsed || 0)}</b>
+    ${data.approved ? `<span>Approved</span><b class="num">${esc(data.approved.at.slice(11, 16))}</b>` : ""}`;
+  $("title").textContent = "Birbal Brief · " + AUD.find((a) => a[0] === cur)[1];
+  if (token) $("title").textContent += ` · approved ${data.approved.at.slice(0, 16)}`;
+  $("share").hidden = !data.share || !!token;
+  $("badge").innerHTML = cur === "me" ? '<span class="chip private">' + icon("lock") + "&nbsp;Owner only</span>"
+    : v.safe ? `<span class="chip ok">${icon("check")}&nbsp;Safe to share</span>` : `<span class="chip danger">${icon("x")}&nbsp;Secret found</span>`;
+
+  const leakWhere = new Set(v.leaks.map((l) => l.where.replace(" (quote)", "")));
+  const L = (t) => leakWhere.has(t) ? " leak" : "";
+  let h = `<h3>Problem</h3><div class="problem${L("problem")}" id="problem" contenteditable="${cur !== "me" && !token}" spellcheck="false"
+    aria-label="Problem statement (editable)">${esc(b.problem)}</div>`;
+  if (v.leaks.length) h += `<p style="font-family:var(--font);font-size:13px;color:var(--danger);margin:8px 0 0">${icon("x")} Contains a private item: ${[...new Set(v.leaks.map((l) => esc(l.span)))].join(", ")}. Approve is blocked until it's removed. <button class="btn ghost" id="restore" style="height:24px;padding:0 6px;font-size:13px">Restore original</button></p>`;
+  if (b.lines.length) h += `<h3>What we know</h3><div class="lines">` + b.lines.map((l, i) =>
+    `<div class="ln${L(l.label)}"><span class="lb">${esc(l.label)}</span><span>${esc(l.text)} <span class="chip ${l.kind}" style="font-family:var(--font);vertical-align:2px">${KIND[l.kind] || ""}</span></span>
+     ${l.evidence_quote ? `<button class="q" data-i="${i}" aria-label="Show evidence">${icon("quote")}</button>` : "<span></span>"}</div>`).join("") + "</div>";
+  if (b.where_to_start.length) h += `<h3>Where to start</h3><ol>${b.where_to_start.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>`;
+  if (b.data_to_request.length) h += `<h3>Data to request</h3><ul>${b.data_to_request.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
+  if (b.open_questions.length) h += `<h3>Open questions</h3><ul>${b.open_questions.map((o) => `<li>${esc(o.question)}${o.lead ? ` <span class="lead-tag">→ ask ${esc(o.lead)}</span>` : ""}</li>`).join("")}</ul>`;
+  if (b.parked.length) h += `<h3>Parked by owner</h3><p style="margin:0">${b.parked.map(esc).join(" · ")}</p>`;
+  if (cur === "me" && data.private.length) h += `<h3>Consent log</h3><ul>${data.private.map((p) => `<li>${esc(p.span)}: ${CHOICE[p.choice] || "Hidden (default)"}${p.decided_turn ? ` <span class="lead-tag">· decided at answer ${p.decided_turn}</span>` : ""}</li>`).join("")}</ul>`;
+  if (cur !== "me" && b.redaction_summary) h += `<div class="redsum">${icon("shield")} Redacted by code before any AI rewrite. ${esc(b.redaction_summary)}</div>`;
+  $("body").innerHTML = h;
+
+  const pr = $("problem");
+  pr.onblur = () => { if (cur !== "me" && pr.textContent.trim() !== b.problem) load(api(q("/api/edit"), { method: "POST", body: { audience: cur, problem: pr.textContent.trim() } })); };
+  pr.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); pr.blur(); } };
+  const rs = $("restore");
+  if (rs) rs.onclick = () => load(api(q("/api/edit"), { method: "POST", body: { audience: cur, problem: "" } }));
+  document.querySelectorAll(".q").forEach((q) => q.onclick = (e) => showQuote(e, b.lines[+q.dataset.i]));
+
+  if (token) return;
+  const blocked = ["builders", "everyone"].some((a) => !vs[a].safe);
+  $("approve").disabled = blocked;
+  $("approve").title = blocked ? "A private item is visible in a shareable version" : "Approve (⌘↵)";
+  $("approve").innerHTML = data.approved ? icon("check") + " Approved" : "Approve " + icon("arrow");
+  $("menu").innerHTML = ["md", "json"].map((f) => `<a href="/api/export/${cur}.${f}?s=${sid}" aria-disabled="${cur !== "me" && !data.approved}">${f === "md" ? "Markdown" : "JSON"}<span style="color:var(--faint)">.${f}</span></a>`).join("")
+    + `<a href="#" id="copy">Copy to clipboard</a>`
+    + (cur !== "me" && !data.approved ? '<div style="padding:6px 10px;font-size:12px;color:var(--faint)">Approve to export shareable versions</div>' : "");
+  $("copy").onclick = async (e) => { e.preventDefault(); await navigator.clipboard.writeText(v.markdown); toast("Copied " + AUD.find((a) => a[0] === cur)[1]); closeMenu(); };
+}
+
+let pop = null;
+function showQuote(e, l) {
+  pop?.remove();
+  pop = document.createElement("div"); pop.className = "pop"; pop.setAttribute("role", "dialog");
+  pop.innerHTML = `<blockquote>“${esc(l.evidence_quote)}”</blockquote><div class="m">Answer ${l.turn}${l.t ? " · " + mmss(Math.round(l.t)) : ""} · ${KIND[l.kind] || ""}</div>`;
+  document.body.appendChild(pop);
+  const r = e.currentTarget.getBoundingClientRect();
+  pop.style.top = `${r.bottom + 6}px`; pop.style.left = `${Math.max(12, r.right - 360)}px`;
+  e.stopPropagation();
+}
+document.addEventListener("click", () => { pop?.remove(); pop = null; });
+
+function closeMenu() { $("menu").hidden = true; $("dl").setAttribute("aria-expanded", "false"); }
+$("dl").onclick = (e) => { e.stopPropagation(); const o = $("menu").hidden; $("menu").hidden = !o; $("dl").setAttribute("aria-expanded", String(o)); };
+document.addEventListener("click", closeMenu);
+
+$("approve").onclick = () => {
+  const n = data.private.length;
+  const hidden = data.private.filter((p) => p.choice !== "keep").length;
+  $("confirmBody").textContent = `Builders and the public will see the redacted versions. ${hidden} of ${n} private item${n === 1 ? "" : "s"} ${hidden === 1 ? "is" : "are"} hidden or removed. The owner version stays with you.`;
+  $("confirm").showModal();
+};
+$("cancel").onclick = () => $("confirm").close();
+$("doApprove").onclick = async () => { $("confirm").close(); await load(api(q("/api/approve"), { method: "POST" })); if (data?.approved) toast("Approved. Shareable versions are ready to export."); };
+
+document.addEventListener("keydown", (e) => {
+  if (document.activeElement?.isContentEditable) return;
+  if (AUD[+e.key - 1]) { cur = AUD[+e.key - 1][0]; render(); }
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !$("approve").disabled) $("approve").click();
+  if (e.key === "Escape") { pop?.remove(); closeMenu(); }
+});
+load();
+</script>
+</body>
+</html>
