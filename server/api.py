@@ -19,6 +19,7 @@ from pydantic import BaseModel  # noqa: E402
 
 from brain import keys, llm  # noqa: E402
 from brain.prompts import OPENING_LINE, OPENING_LINES, TALKER_SYSTEM, talker_messages  # noqa: E402
+from brain.cloud import make_store, open_github_issue  # noqa: E402
 from brain.session import Session, SessionStore  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +33,7 @@ app = FastAPI(title="Birbal")
 @app.on_event("startup")
 async def _autosave():
     asyncio.create_task(store.autosave())
-store = SessionStore(Path(os.getenv("BIRBAL_DATA", ROOT / "data" / "sessions")))
+store = make_store(Path(os.getenv("BIRBAL_DATA", ROOT / "data" / "sessions")))
 _tasks: dict[str, asyncio.Task] = {}  # replay / voice task per session
 
 Audience = Literal["me", "builders", "everyone"]
@@ -80,6 +81,18 @@ def shared_page(token: str):
     return FileResponse(WEB / "review.html")
 
 
+@app.get("/board")
+def board_page():
+    return FileResponse(WEB / "board.html")
+
+
+@app.get("/api/board")
+def board():
+    """Approved, redacted problems: the public teaser plus a link to the builder brief."""
+    rows = store.board() if hasattr(store, "board") else []
+    return [{"id": r["id"], "posted": r["posted"], "teaser": r["teaser"], "link": f"/b/{r['share_token']}"} for r in rows]
+
+
 @app.get("/api/shared/{token}")
 async def shared(token: str):
     """Read-only view of an APPROVED brief: builder and public versions only. Never the owner version."""
@@ -102,7 +115,7 @@ def health():
     return {"llm": llm.available(), "voice": voice, "why": why,
             "keys": {p: len(keys.pool(p)) for p in keys.ENV},
             "tts": os.getenv("TTS_PROVIDER", "aura"),
-            "model": {"gemini": llm.GEMINI_MODEL, "groq": llm.GROQ_MODEL}.get(llm.talker_provider(), "none")}
+            "model": {"gemini": llm.GEMINI_TALKER_MODEL, "groq": llm.GROQ_MODEL, "alt": llm.ALT_MODEL}.get(llm.talker_provider(), "none")}
 
 
 @app.get("/api/sessions")
@@ -204,6 +217,8 @@ async def brief(s: str):
 async def choice(s: str, c: ChoiceIn):
     sess = _get(s)
     sess.set_choice(c.span, c.choice)
+    if sess.approved and hasattr(store, "unpost_board"):
+        store.unpost_board(sess)  # a changed brief leaves the board until re-approved
     sess.approved = None
     store.save(sess)
     return await _brief(sess)
@@ -234,6 +249,13 @@ async def approve(s: str):
     for a, v in vs.items():
         (EXPORTS / f"birbal-{sess.id}-{a}.md").write_text(v.markdown)
         (EXPORTS / f"birbal-{sess.id}-{a}.json").write_text(json.dumps(_version_json(v), indent=2))
+    # The consequential actions, only after approval: post to the problem board, open a builder issue.
+    teaser = vs["everyone"].brief.problem
+    sess.approved["board"] = bool(getattr(store, "post_board", None)) and store.post_board(sess, teaser, vs["builders"].markdown)
+    b = vs["builders"].brief
+    body = vs["builders"].markdown + "\n\n---\n" + "\n".join(f"- [ ] {o.question}" for o in b.open_questions)
+    sess.approved["issue"] = open_github_issue(f"Problem: {teaser[:90]}", body, ["birbal", "problem-brief"])
+    store.save(sess)
     return await _brief(sess)
 
 
