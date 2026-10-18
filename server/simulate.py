@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import json
 import re
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -64,6 +65,11 @@ async def run(name: str, turns: int) -> dict:
             break
     s.finish()
     v = await s.brief()
+    out_dir = Path(__file__).resolve().parent.parent / "data" / "sim"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"{name}-{int(time.time())}.json").write_text(json.dumps(s.to_dict(), indent=1))
+    for leak in v["builders"].leaks:
+        print(f"  [{name}] LEAK in builders: {leak.span!r} at {leak.where}: {leak.snippet[:100]!r}")
     planted = p.get("secrets", [])
     caught = [x for x in planted if any(x.lower() in z.span.lower() or z.span.lower() in x.lower() for z in s.ledger.sensitive)]
     kinds = {k: sum(c.kind == k for c in s.ledger.claims) for k in ("observed", "hearsay", "inferred", "aspiration")}
