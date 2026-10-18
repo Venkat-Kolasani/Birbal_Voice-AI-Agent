@@ -1,0 +1,240 @@
+{
+ "title": "Merchant onboarding drop-off (fictional demo persona)",
+ "turns": [
+  {
+   "birbal": "Namaste, I'm Birbal. I'll ask a few questions and turn your problem into a brief builders can act on. Nothing is shared with builders until you approve. So, what's going wrong?",
+   "owner": "Merchants find our onboarding really confusing, a lot of them drop off.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "who",
+      "value": "Merchants going through onboarding",
+      "kind": "inferred",
+      "evidence_quote": "Merchants find our onboarding really confusing"
+     },
+     {
+      "dimension": "impact",
+      "value": "Many merchants drop off during onboarding",
+      "kind": "inferred",
+      "evidence_quote": "a lot of them drop off"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "A lot of them drop off. Walk me through the last time a merchant got stuck, step by step?",
+   "owner": "Yesterday a kirana owner called support. He'd uploaded his PAN, then the bank verification with Kaveri Bank just kept spinning.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "current_state",
+      "value": "Merchant uploads PAN, then bank-account verification with Kaveri Bank hangs (incident yesterday)",
+      "kind": "observed",
+      "anchored": true,
+      "evidence_quote": "He'd uploaded his PAN, then the bank verification with Kaveri Bank just kept spinning."
+     },
+     {
+      "dimension": "who",
+      "value": "Small retail (kirana) owners self-onboarding",
+      "kind": "observed",
+      "anchored": true,
+      "evidence_quote": "Yesterday a kirana owner called support."
+     }
+    ],
+    "sensitive": [
+     {
+      "span": "Kaveri Bank",
+      "category": "org_or_partner_name",
+      "generalisation": "a partner bank"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "Stuck right after the PAN upload. You mentioned Kaveri Bank by name. Fine for builders to see, or keep it internal?",
+   "owner": "Keep it internal please.",
+   "scribe": {
+    "owner_choices": [
+     {
+      "span": "Kaveri Bank",
+      "choice": "generalise"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "Noted, it stays internal. What do merchants do today when it spins?",
+   "owner": "They call support and an agent verifies the account manually, takes about 15 minutes each. Also our app is slow in general, and the QR flow is clunky.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "workaround",
+      "value": "Merchant calls support; an agent verifies the account manually (~15 min per merchant)",
+      "kind": "observed",
+      "anchored": true,
+      "evidence_quote": "an agent verifies the account manually, takes about 15 minutes each"
+     }
+    ],
+    "parked_topics": [
+     "App speed",
+     "QR flow"
+    ]
+   }
+  },
+  {
+   "birbal": "I've noted app speed and the QR flow. Let's stay with verification. Why does this matter to the business?",
+   "owner": "Support is drowning. We added 6 agents just for this last quarter, and merchants who call usually don't come back.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "impact",
+      "value": "6 support agents added last quarter just for manual verification",
+      "kind": "observed",
+      "anchored": true,
+      "evidence_quote": "We added 6 agents just for this last quarter"
+     },
+     {
+      "dimension": "impact",
+      "value": "Merchants who call rarely return",
+      "kind": "inferred",
+      "evidence_quote": "merchants who call usually don't come back"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "Six extra agents just for this. How many merchants hit that step and don't finish, say, last week?",
+   "owner": "Around 40 a day I think... actually our weekly report said 1,200.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "frequency",
+      "value": "Around 40 merchants a day abandon at verification",
+      "kind": "inferred",
+      "anchored": true,
+      "evidence_quote": "Around 40 a day I think"
+     }
+    ],
+    "contradictions": [
+     {
+      "dimension": "frequency",
+      "a": "about 40 a day (~280 a week)",
+      "b": "1,200 a week per the weekly report"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "Earlier you said about 40 a day, but the weekly report says 1,200. Which one is closer?",
+   "owner": "The report. 1,200 a week. And that number is confidential.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "frequency",
+      "value": "1,200 merchants a week abandon at verification (weekly ops report)",
+      "kind": "observed",
+      "anchored": true,
+      "source": "weekly ops report",
+      "evidence_quote": "The report. 1,200 a week."
+     }
+    ],
+    "resolved_contradictions": [
+     "frequency"
+    ],
+    "owner_choices": [
+     {
+      "span": "1,200",
+      "choice": "generalise"
+     }
+    ],
+    "sensitive": [
+     {
+      "span": "1,200",
+      "category": "business_metric",
+      "generalisation": "over a thousand"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "Understood, I'll keep that internal. Any constraints a builder must respect, like tech, regulation or timeline?",
+   "owner": "We have to use the bank's verification API, and everything must follow RBI KYC norms. I've heard their API times out a lot at peak hours.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "constraints",
+      "value": "Must use the partner bank's verification API; must follow RBI KYC norms",
+      "kind": "observed",
+      "anchored": true,
+      "evidence_quote": "We have to use the bank's verification API, and everything must follow RBI KYC norms."
+     },
+     {
+      "dimension": "current_state",
+      "value": "Partner bank API reportedly times out at peak hours",
+      "kind": "hearsay",
+      "evidence_quote": "I've heard their API times out a lot at peak hours."
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "The bank's API and RBI KYC norms. What's been tried to fix it so far?",
+   "owner": "I don't know, that was before I joined.",
+   "scribe": {}
+  },
+  {
+   "birbal": "Before your time, then. Who would know?",
+   "owner": "Probably Ravi on the platform team.",
+   "scribe": {
+    "unknowns": [
+     {
+      "dimension": "attempted",
+      "question": "What has been tried to fix verification, and why did it stall?",
+      "who_might_know": "Ravi on the platform team"
+     }
+    ],
+    "sensitive": [
+     {
+      "span": "Ravi",
+      "category": "person_name",
+      "generalisation": "the platform team lead"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "You named Ravi. Can builders see his name, or should I just say the platform team?",
+   "owner": "Just say the platform team.",
+   "scribe": {
+    "owner_choices": [
+     {
+      "span": "Ravi",
+      "choice": "generalise"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "Just the platform team, then. Last one. How would you know this is solved?",
+   "owner": "If at least 90 percent of merchants finish verification in the app without calling support.",
+   "scribe": {
+    "claims": [
+     {
+      "dimension": "success_test",
+      "value": "At least 90% of merchants complete verification in-app without a support call",
+      "kind": "aspiration",
+      "anchored": true,
+      "evidence_quote": "at least 90 percent of merchants finish verification in the app without calling support"
+     }
+    ]
+   }
+  },
+  {
+   "birbal": "Here's what I heard. Small retail merchants get stuck at bank verification after uploading PAN. Over a thousand a week fall back to manual support, which needed six extra agents. You must use the bank's API under RBI KYC rules. Success means 90 percent finish in the app. What did I get wrong?",
+   "owner": "That's right. That's everything.",
+   "scribe": {
+    "owner_done": true
+   }
+  }
+ ]
+}
