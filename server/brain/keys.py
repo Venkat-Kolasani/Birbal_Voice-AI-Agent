@@ -5,7 +5,7 @@ and the next healthy key (or the next provider) is used instead.
 import os
 import time
 
-ENV = {"gemini": "GOOGLE_API_KEY", "groq": "GROQ_API_KEY", "deepgram": "DEEPGRAM_API_KEY",
+ENV = {"gemini": "GOOGLE_API_KEY", "groq": "GROQ_API_KEY", "alt": "ALT_LLM_KEY", "deepgram": "DEEPGRAM_API_KEY",
        "sarvam": "SARVAM_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY"}
 _cool: dict[tuple[str, str], float] = {}  # (provider, key) -> resting until (monotonic)
 _turn: dict[str, int] = {}  # round-robin cursor per provider
