@@ -1,3 +1,14 @@
+---
+title: Birbal
+emoji: 🎙️
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Voice interviewer that turns a messy problem into a brief
+---
+
 # Birbal
 
 **Akbar had Birbal. Now every builder does.** · *Problem bolo, Birbal samjhega.*
