@@ -251,3 +251,6 @@ dialog .df { padding: 12px 20px; border-top: 1px solid var(--border); display: f
 .r.focus.flash { animation: none; }
 .r .st { transition: background .3s, border-color .3s; }
 .progress i { transition: background .5s ease; }
+a.btn { color: var(--text); }
+a.btn.primary { color: var(--accent-ink); }
+a.btn.ghost { color: var(--muted); }
