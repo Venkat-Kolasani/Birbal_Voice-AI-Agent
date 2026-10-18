@@ -61,3 +61,9 @@ def test_consent_asked_once_then_defaults_to_hidden():
     assert s.gap().focus != "consent"
     item = s.ledger.sensitive[0]
     assert item.choice == "generalise" and item.auto
+
+
+def test_resume_line_not_recorded_twice():
+    s = Session(); s.start("text"); s.add_birbal("How often does it happen?")
+    s.add_birbal("I'm back. How often does it happen?")
+    assert [t.text for t in s.ledger.transcript] == ["How often does it happen?"]
