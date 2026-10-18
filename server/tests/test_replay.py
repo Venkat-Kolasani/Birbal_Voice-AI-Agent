@@ -49,3 +49,15 @@ def test_controller_mid_interview_asks_consent_after_bank():
         s.add_owner(t["owner"], ScribeOutput.model_validate(t["scribe"]))
     assert s.gap().focus == "consent"
     assert "CONSENT" in s.note() and "Kaveri Bank" in s.note()
+
+
+def test_consent_asked_once_then_defaults_to_hidden():
+    from brain.schema import ScribeOutput, Sensitive
+    s = Session(); s.start("text"); s.add_birbal("Q?")
+    s.add_owner("We work with Kaveri Bank.", ScribeOutput(sensitive=[Sensitive(span="Kaveri Bank", category="org_or_partner_name")]))
+    assert s.gap().focus == "consent"
+    s.note()  # Birbal asks
+    s.add_owner("Anyway, about 40 merchants a day.", ScribeOutput())  # owner ignores the question
+    assert s.gap().focus != "consent"
+    item = s.ledger.sensitive[0]
+    assert item.choice == "generalise" and item.auto
