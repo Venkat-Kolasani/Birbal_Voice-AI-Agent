@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Birbal · Problem board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+<style>
+.boardwrap { max-width: 760px; margin: 40px auto; padding: 0 24px; }
+.boardwrap h1 { font-size: 22px; letter-spacing: -.01em; margin: 0 0 4px; }
+.boardwrap p.lead { color: var(--muted); margin: 0 0 24px; }
+.card { display: block; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  color: var(--text); text-decoration: none; margin-bottom: 10px; }
+.card:hover { border-color: var(--border-strong); }
+.card .t { font-family: var(--serif); font-size: 17px; line-height: 1.45; }
+.card .m { font-size: 12px; color: var(--faint); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <a class="brand" href="/" style="color:inherit;text-decoration:none"><span class="mark">B</span>Birbal</a>
+  <span class="crumb">Problem board</span>
+  <div class="spacer"></div>
+  <a class="btn" href="/">Add a problem</a>
+  <button class="btn ghost" id="theme"></button>
+</div>
+<main class="boardwrap">
+  <h1>Problems ready for builders</h1>
+  <p class="lead">Each one was interviewed by Birbal, redacted by its owner, and approved. Open one for the builder brief.</p>
+  <div id="list"><div class="skeleton" style="width:70%"></div><div class="skeleton"></div></div>
+</main>
+<script src="/static/common.js"></script>
+<script>
+initTheme();
+(async () => {
+  const el = document.getElementById("list");
+  try {
+    const rows = await api("/api/board");
+    el.innerHTML = rows.length ? rows.map((r) => `<a class="card" href="${r.link}"><div class="t">${esc(r.teaser)}</div>
+      <div class="m num">Posted ${esc(String(r.posted).slice(0, 16).replace("T", " "))}</div></a>`).join("")
+      : '<p style="color:var(--faint)">Nothing posted yet. Approve a brief to post it here.</p>';
+  } catch (e) { el.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; }
+})();
+</script>
+</body>
+</html>
