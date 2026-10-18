@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Birbal · Problem intake that listens</title>
+<meta name="description" content="Birbal interviews a problem owner by voice, grades every claim, asks before sharing anything private, and writes a brief builders can act on.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+<style>
+.lp { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+.hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; padding: 88px 0 72px; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.eyebrow .dot { background: var(--accent); }
+.hero h1 { font-size: 48px; line-height: 1.05; letter-spacing: -.03em; margin: 16px 0 18px; font-weight: 700; }
+.hero h1 em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var(--accent); }
+.hero p.sub { font-size: 18px; color: var(--muted); max-width: 520px; margin: 0 0 28px; line-height: 1.55; }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.cta .note { font-size: 13px; color: var(--faint); }
+
+/* live demo card */
+.demo { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 24px 60px -24px rgba(28,25,23,.18); overflow: hidden; }
+.demo .top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.demo .top .live { margin-left: auto; }
+.demo .body { padding: 18px 18px 8px; min-height: 236px; }
+.line { opacity: 0; transform: translateY(4px); transition: opacity .35s, transform .35s; margin-bottom: 14px; }
+.line.on { opacity: 1; transform: none; }
+.line .who { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin-bottom: 3px; }
+.line .txt { font-size: 14px; }
+.line.b .txt { font-weight: 500; }
+.line.o .txt { color: var(--muted); }
+.demo .notes { border-top: 1px solid var(--border); padding: 12px 18px 16px; display: grid; gap: 8px; }
+.note { display: flex; align-items: center; gap: 10px; font-size: 13px; opacity: 0; transition: opacity .4s; }
+.note.on { opacity: 1; }
+.note .k { width: 96px; color: var(--muted); }
+.note .v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+section.band { padding: 72px 0; border-top: 1px solid var(--border); }
+.band h2 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 10px; }
+.band p.lead { color: var(--muted); margin: 0 0 36px; max-width: 620px; font-size: 16px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.step { border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; background: var(--surface); }
+.step .n { font-size: 12px; color: var(--accent); font-weight: 600; margin-bottom: 8px; }
+.step h3 { font-size: 16px; margin: 0 0 6px; }
+.step p { margin: 0; color: var(--muted); font-size: 14px; }
+.grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.grade { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; background: var(--surface); }
+.grade .chip { margin-bottom: 10px; }
+.grade p { margin: 0; font-family: var(--serif); font-size: 15px; color: var(--text); line-height: 1.45; }
+.grade small { display: block; color: var(--faint); margin-top: 8px; font-size: 12px; }
+.feats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.feat { padding: 4px 0; }
+.feat h3 { font-size: 16px; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+.feat p { margin: 0; color: var(--muted); font-size: 14px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.stat b { display: block; font-size: 32px; letter-spacing: -.02em; }
+.stat span { color: var(--muted); font-size: 13px; }
+.quote { font-family: var(--serif); font-size: 22px; line-height: 1.5; max-width: 760px; }
+.quote small { display: block; font-family: var(--font); font-size: 13px; color: var(--muted); margin-top: 12px; }
+footer.lpf { border-top: 1px solid var(--border); padding: 28px 0 48px; color: var(--faint); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; }
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; padding: 48px 0; gap: 32px; }
+  .hero h1 { font-size: 36px; }
+  .steps, .grades, .feats, .stats { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) { .steps, .grades, .feats, .stats { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div class="brand"><span class="mark">B</span>Birbal</div>
+  <div class="spacer"></div>
+  <a class="btn ghost" href="/board">Problem board</a>
+  <a class="btn primary" href="/start" id="topcta"></a>
+  <button class="btn ghost" id="theme"></button>
+</div>
+
+<main class="lp">
+  <section class="hero">
+    <div>
+      <span class="eyebrow"><span class="dot"></span>Akbar had Birbal. Now every builder does.</span>
+      <h1>Turn a messy problem into a brief <em>builders can act on.</em></h1>
+      <p class="sub">Birbal interviews the person who has the problem, by voice or text. It asks about what actually happened, grades every claim as seen, heard, guessed or wished, and asks before anything private leaves the room.</p>
+      <div class="cta">
+        <a class="btn primary lg" href="/start" id="heroCta"></a>
+        <a class="btn lg" href="/board">See the problem board</a>
+      </div>
+      <p class="cta note" style="margin-top:14px">English · हिंदी · ಕನ್ನಡ · Hinglish. The brief is always in English.</p>
+    </div>
+
+    <div class="demo" aria-label="Example interview">
+      <div class="top"><span class="mark" style="width:18px;height:18px;font-size:10px">B</span>Interview · 02:41<span class="pill live live"><span class="dot"></span>Live</span></div>
+      <div class="body" id="demoBody"></div>
+      <div class="notes" id="demoNotes"></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <h2>A debrief, not a survey.</h2>
+    <p class="lead">No fixed questionnaire. After every answer, Birbal works out what's still missing and asks one short question about it, the way a good investigator would.</p>
+    <div class="steps">
+      <div class="step"><div class="n">01 · Ask</div><h3>"Walk me through the last time."</h3><p>Specific incidents over opinions, numbers over adjectives. It names contradictions and parks side-topics.</p></div>
+      <div class="step"><div class="n">02 · Grade</div><h3>Every claim, with its quote.</h3><p>A note-taker runs in the background and files each claim against nine dimensions, with the owner's exact words attached.</p></div>
+      <div class="step"><div class="n">03 · Approve</div><h3>Nothing leaves until you say so.</h3><p>Read-back, then a brief in three versions. Approve posts it to the problem board. Cancel posts nothing.</p></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <h2>Facts, separated from assumptions.</h2>
+    <p class="lead">Every line of the brief carries one of four grades, so a builder knows what was seen and what was guessed.</p>
+    <div class="grades">
+      <div class="grade"><span class="chip observed">Dekha · Seen</span><p>"Our weekly report says 1,200 merchants abandon at verification."</p><small>They saw it, or cite a record</small></div>
+      <div class="grade"><span class="chip hearsay">Suna · Heard</span><p>"Support told me the bank's API times out at peak hours."</p><small>Someone told them</small></div>
+      <div class="grade"><span class="chip inferred">Socha · Guessed</span><p>"Merchants find our onboarding confusing."</p><small>Their own conclusion</small></div>
+      <div class="grade"><span class="chip aspiration">Chahiye · Wished</span><p>"We'd know it worked if 90% finish in the app."</p><small>What they want</small></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <h2>Built for things you can't share.</h2>
+    <p class="lead">Real problems come with partner names, customer details and numbers. Birbal treats them as a first-class part of the interview.</p>
+    <div class="feats">
+      <div class="feat"><h3><span class="chip private" id="i1"></span>Consent at the moment you say it</h3><p>"You mentioned Kaveri Bank. Fine for builders to see, or keep that internal?" One question, then it moves on.</p></div>
+      <div class="feat"><h3><span class="chip ok" id="i2"></span>Redacted by code, not by prompt</h3><p>Private items are replaced before any AI writes the builder version. A leak check blocks approval if anything slips through.</p></div>
+      <div class="feat"><h3><span class="chip" id="i3" style="color:var(--muted);background:var(--sunken)"></span>Three versions from one record</h3><p>For you, with every quote. For builders, redacted and action-ready. For everyone, a three-line teaser.</p></div>
+      <div class="feat"><h3><span class="chip" id="i4" style="color:var(--muted);background:var(--sunken)"></span>Every line is traceable</h3><p>Click any line of the brief to see the exact words and the moment they were said.</p></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="stats">
+      <div class="stat"><b class="num">96%</b><span>claim-grade accuracy on a 28-sentence labelled benchmark</span></div>
+      <div class="stat"><b class="num">8 / 9</b><span>dimensions clear in six turns on a vague test persona</span></div>
+      <div class="stat"><b class="num">&lt;1 s</b><span>to Birbal's next question on the fastest provider</span></div>
+      <div class="stat"><b class="num">₹0</b><span>to run on free tiers and signup credits</span></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <p class="quote">Birbal found the truth by asking one more clever question, never by accusation. Builders deserve the same: one good debrief, and a report they're allowed to read.
+      <small>Built for the AI Garage × Paytm Voice AI Buildathon · Problem Intake</small></p>
+    <div class="cta" style="margin-top:28px"><a class="btn primary lg" href="/start" id="footCta"></a><a class="btn lg" href="/start?demo=1">Watch a recorded interview</a></div>
+  </section>
+
+  <footer class="lpf"><span>Birbal</span><span>Pipecat · Deepgram · Sarvam · Groq · Supabase</span><span>Use fictional data in demos. Free AI tiers may use inputs to improve their models.</span></footer>
+</main>
+
+<script src="/static/common.js"></script>
+<script>
+initTheme();
+const $ = (id) => document.getElementById(id);
+["topcta", "heroCta", "footCta"].forEach((id) => $(id).innerHTML = icon("mic") + (id === "topcta" ? "Start" : "Start an interview"));
+$("i1").innerHTML = icon("lock"); $("i2").innerHTML = icon("check"); $("i3").innerHTML = icon("file"); $("i4").innerHTML = icon("quote");
+
+// Self-playing example: the same moment judges see in the product.
+const SCRIPT = [
+  ["b", "Birbal", "So, what's going wrong?"],
+  ["o", "You", "Merchants find our onboarding confusing. A lot of them drop off."],
+  ["b", "Birbal", "A lot of them drop off. Walk me through the last time, step by step?"],
+  ["o", "You", "Yesterday a kirana owner's bank check with Kaveri Bank just kept spinning."],
+  ["b", "Birbal", "Stuck after the PAN upload. You mentioned Kaveri Bank. Fine for builders to see, or keep it internal?"],
+];
+const NOTES = [
+  [2, "Who", "Merchants in onboarding", "inferred", "Socha · Guessed"],
+  [4, "Current state", "Bank check hangs after PAN upload", "observed", "Dekha · Seen"],
+  [5, "Private", "Kaveri Bank → asking…", "private", "Lock"],
+];
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function play() {
+  const body = $("demoBody"), notes = $("demoNotes");
+  body.innerHTML = SCRIPT.map(([c, w, t]) => `<div class="line ${c}"><div class="who">${w}</div><div class="txt">${esc(t)}</div></div>`).join("");
+  notes.innerHTML = NOTES.map(([, k, v, kind, lbl]) => `<div class="note"><span class="k">${k}</span><span class="v">${esc(v)}</span><span class="chip ${kind}">${kind === "private" ? icon("lock") : lbl}</span></div>`).join("");
+  const lines = [...body.children], ns = [...notes.children];
+  lines.forEach((el, i) => setTimeout(() => el.classList.add("on"), reduce ? 0 : 400 + i * 1300));
+  NOTES.forEach(([at], i) => setTimeout(() => ns[i].classList.add("on"), reduce ? 0 : 400 + at * 1300 - 500));
+  if (!reduce) setTimeout(play, 400 + SCRIPT.length * 1300 + 4000);
+}
+play();
+</script>
+</body>
+</html>
