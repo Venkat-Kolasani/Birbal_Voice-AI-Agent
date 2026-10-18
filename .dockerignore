@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.git
+.venv
+data
+exports
+docs
+scripts
+.claude
+.commandcode
+.mcp.json
+**/__pycache__
+.pytest_cache
