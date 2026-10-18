@@ -254,3 +254,16 @@ dialog .df { padding: 12px 20px; border-top: 1px solid var(--border); display: f
 a.btn { color: var(--text); }
 a.btn.primary { color: var(--accent-ink); }
 a.btn.ghost { color: var(--muted); }
+
+/* print / PDF: only the brief itself */
+@media print {
+  @page { margin: 16mm; }
+  .bar, .rail, .menu, .pop, .toast, dialog, #restore, .ln .q { display: none !important; }
+  body, .review, .doc { background: #fff !important; color: #111 !important; }
+  .review { display: block; }
+  .doc { padding: 0 !important; }
+  .paper { border: 0 !important; max-width: none !important; }
+  .chip { border: 1px solid #ccc; background: none !important; }
+  .problem { background: none !important; box-shadow: none !important; }
+  .ln { break-inside: avoid; }
+}
