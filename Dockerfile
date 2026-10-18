@@ -1,4 +1,4 @@
-# Birbal on Hugging Face Spaces (Docker SDK) or any container host. Listens on 7860 (HF default).
+# Birbal container: Render (free), or any container host. Listens on $PORT, default 7860.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -18,5 +18,6 @@ COPY server ./server
 COPY web ./web
 
 # HF runs the container as uid 1000; only /tmp needs to be writable (sessions also go to Supabase).
+# Render/Railway/Koyeb inject $PORT; Hugging Face uses 7860.
 EXPOSE 7860
-CMD [".venv/bin/uvicorn", "api:app", "--app-dir", "server", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "exec .venv/bin/uvicorn api:app --app-dir server --host 0.0.0.0 --port ${PORT:-7860}"]
