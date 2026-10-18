@@ -63,6 +63,10 @@ class Session:
         return next((t.text for t in reversed(self.ledger.transcript) if t.role == "birbal"), "")
 
     def add_birbal(self, text: str) -> None:
+        # The resume line ("I'm back. <last question>") is said aloud but not recorded twice.
+        if text.startswith("I'm back. ") and self.ledger.transcript and \
+                text[len("I'm back. "):].strip() == self.last_birbal():
+            return
         if text.strip():
             self.ledger.transcript.append(Turn(role="birbal", text=text.strip(), t=self._t()))
             self.dirty = True
