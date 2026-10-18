@@ -44,6 +44,8 @@ class Sensitive(BaseModel):
     choice: Optional[Choice] = None
     turn: int = 0
     decided_turn: Optional[int] = None
+    asked_turn: Optional[int] = None  # owner turn number when Birbal asked about it
+    auto: bool = False  # choice defaulted to hidden because the owner didn't answer
 
 
 class Claim(BaseModel):
