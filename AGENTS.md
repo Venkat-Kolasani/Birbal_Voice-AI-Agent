@@ -8,6 +8,24 @@ Tagline: *"Akbar had Birbal. Now every builder does."* · *Problem bolo, Birbal 
 
 ---
 
+## 0. Run (built before the event; see docs/IMPLEMENTATION_LOG.md for what is verified)
+
+```bash
+uv sync                                                    # install (Python ≥3.11, pipecat-ai 1.12.0 pinned)
+cp .env.example .env                                       # add keys; never commit .env
+uv run uvicorn api:app --app-dir server --port 8000        # app at http://localhost:8000
+uv run pytest -q                                           # 46 tests, no keys needed
+uv run python server/simulate.py --turns 12                # interview-quality scorecard (needs LLM keys)
+```
+- `/` is the landing page; the app is at `/start`; the public board is at `/board`.
+- Each interview is its own session, `/start?s=<id>`, saved to `data/sessions/<id>.json` (gitignored). A refresh resumes the interview; the start screen lists recent briefs, with redacted titles.
+- In voice mode, **Type instead** (`T`) switches to typing mid-interview without losing anything.
+- Interviews in progress autosave every 5 s. Approving creates a read-only share link, `/b/<token>`, with the builder and public versions only.
+- From a phone or another laptop: `./scripts/serve_lan.sh` (HTTPS on the LAN IP, port 8443). Use a phone hotspot.
+- `http://localhost:8000/start?demo=1` shows **Play demo**: replays `server/fixtures/demo_interview.json` with no keys. This is the demo fallback.
+- **Type instead** needs `GOOGLE_API_KEY` or `GROQ_API_KEY`.
+- **Start interview** (voice) also needs `DEEPGRAM_API_KEY`, plus the key for the chosen `TTS_PROVIDER`.
+
 ## 1. Hard constraints (never violate)
 
 1. **₹0 spend.** Use only free tiers and signup credits: Gemini free tier, Deepgram $200 credit, Sarvam ₹100 credit, Groq free tier, ElevenLabs free tier. Never add a paid service or one that needs a card.
@@ -79,8 +97,8 @@ The Talker never waits for the Scribe. The Scribe lags one turn, and the Talker 
 | Role | Default | Fallback | Env var |
 |---|---|---|---|
 | STT | Deepgram Nova-3 multilingual, streaming | Groq `whisper-large-v3` | `DEEPGRAM_API_KEY` / `GROQ_API_KEY` |
-| Talker LLM | Gemini `gemini-3.8-flash` | Groq `openai/gpt-oss-120b` | `GOOGLE_API_KEY` |
-| Scribe LLM | Gemini `gemini-3.8-flash` (JSON schema) | Groq `openai/gpt-oss-120b`, every 2nd turn (8K TPM limit) | `GROQ_API_KEY` |
+| Talker LLM | Gemini `gemini-3.6-flash` | Groq `openai/gpt-oss-120b` | `GOOGLE_API_KEY` |
+| Scribe LLM | Gemini `gemini-3.6-flash` (JSON schema) | Groq `openai/gpt-oss-120b`, every 2nd turn (8K TPM limit) | `GROQ_API_KEY` |
 | TTS | Deepgram Aura-2 (dev) | Sarvam `bulbul:v3` (demo), ElevenLabs Flash v2.5 (alternate) | `TTS_PROVIDER=aura\|sarvam\|elevenlabs`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY` |
 | Plan B (all in one) | Gemini Live `gemini-3.8-live` | `gemini-2.5-flash-native-audio-preview-12-2025` | `BIRBAL_MODE=cascade\|live` |
 
@@ -108,7 +126,7 @@ docs/ IMPLEMENTATION_LOG.md  ISSUES.md  DECISIONS.md
 1. a pending consent question;
 2. an open contradiction;
 3. `current_state` while it is below 2;
-4. the lowest-scoring dimension, in table order;
+4. the first unsettled dimension in table order (score < 2 and no unknown-with-lead), so a vague answer is deepened right away;
 5. read-back, when every dimension is at 2, or after 8 minutes, or when the owner says they're done.
 
 **GapReport:** `{focus, why, pending_consent[], contradictions[], parked[], minutes_elapsed, ready_for_readback}`
@@ -185,8 +203,9 @@ Known limit, to state in the pitch: paraphrases are not caught, which is why ste
 
 | Time | Do |
 |---|---|
-| 0:00–0:30 | Read the workbook; if it mandates a stack, map it onto `brain/` (the transport only); network + mic check; hotspot ready |
-| 0:30–2:00 | Unseen-input testing: 5 problems from outside fintech; fix prompts; log every issue |
+| 0:00–0:20 | **Voice gate:** keys in `.env`; read Gemini and Groq free limits (Talker defaults to Gemini; use Groq only if it shows ≥30K TPM). Then, in order: (1) answer with one word, "Yes." (if it hangs, set `BARGE_IN_MIN_WORDS=1`); (2) interrupt Birbal mid-sentence; (3) Type instead mid-voice; (4) one Hinglish sentence; (5) one Hindi sentence with हिंदी selected; (6) End → review → Approve → open the share link. Read Pipecat's TTFB logs once and tune only the slowest step. |
+| 0:20–0:40 | `uv run python server/simulate.py` once; read the workbook; network + mic check; hotspot ready |
+| 0:40–2:00 | Unseen-input testing: 5 problems from outside fintech; fix prompts; log every issue |
 | 2:00–3:00 | Polish only (no new features); switch TTS to Sarvam; final redaction checks |
 | 3:00–4:00 | Rehearse the demo 3×; record the backup video; charge the laptop |
 
