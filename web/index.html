@@ -10,7 +10,7 @@
 </head>
 <body>
 <div class="bar">
-  <div class="brand"><span class="mark">B</span>Birbal</div>
+  <a class="brand" href="/" style="color:inherit;text-decoration:none"><span class="mark">B</span>Birbal</a>
   <span class="crumb" id="crumb">Problem intake</span>
   <div class="spacer"></div>
   <span class="pill num" id="timer" hidden></span>
@@ -125,7 +125,7 @@ function showLive() {
   ["timer", "livepill", "end"].forEach((id) => $(id).hidden = false);
   $("crumb").textContent = "Interview";
   paintHeader();
-  history.replaceState(null, "", `/?s=${sid}${demo ? "&demo=1" : ""}`);
+  history.replaceState(null, "", `/start?s=${sid}${demo ? "&demo=1" : ""}`);
   poll = setInterval(refresh, 700); refresh();
 }
 
@@ -293,7 +293,7 @@ async function home() {
       mode = "text"; showLive();  // resume after refresh: continue by typing
       toast("Interview resumed. Continue by typing.");
       return;
-    } catch (e) { history.replaceState(null, "", "/"); }
+    } catch (e) { history.replaceState(null, "", "/start"); }
   }
   home();
 })();
