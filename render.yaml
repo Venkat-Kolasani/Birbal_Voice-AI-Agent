@@ -1,0 +1,30 @@
+# Render blueprint: New + > Blueprint > pick this repo. Fill the secret values when prompted (sync: false).
+services:
+  - type: web
+    name: birbal
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - { key: GOOGLE_API_KEY, sync: false }
+      - { key: GROQ_API_KEY, sync: false }
+      - { key: DEEPGRAM_API_KEY, sync: false }
+      - { key: SARVAM_API_KEY, sync: false }
+      - { key: ELEVENLABS_API_KEY, sync: false }
+      - { key: ALT_LLM_KEY, sync: false }
+      - { key: SUPABASE_URL, sync: false }
+      - { key: SUPABASE_KEY, sync: false }
+      - { key: TURN_URLS, sync: false }
+      - { key: TURN_USERNAME, sync: false }
+      - { key: TURN_CREDENTIAL, sync: false }
+      - { key: TALKER_PROVIDER, value: groq }
+      - { key: SCRIBE_PROVIDER, value: alt }
+      - { key: GEMINI_MODEL, value: gemini-flash-lite-latest }
+      - { key: GEMINI_TALKER_MODEL, value: gemini-flash-lite-latest }
+      - { key: GROQ_MODEL, value: openai/gpt-oss-120b }
+      - { key: ALT_LLM_BASE, value: https://api.commandcode.ai/provider/v1 }
+      - { key: ALT_LLM_MODEL, value: gpt-5.6-luna }
+      - { key: TTS_PROVIDER, value: sarvam }
+      - { key: SARVAM_VOICE, value: shubh }
