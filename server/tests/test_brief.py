@@ -100,3 +100,11 @@ def test_handtyped_secret_blocks():
     b = redact(versions(ledger())["me"].brief, [BANK, METRIC], "builders")
     b.lines.append(BriefLine(dimension="impact", label="Why it matters", text="Kaveri Bank SLA breach"))
     assert leak_check(b, [BANK, METRIC])
+
+
+def test_generalisation_that_repeats_secret_is_replaced():
+    bad = Sensitive(span="120", category="business_metric", generalisation="about 120 returns weekly", choice="generalise")
+    led = Ledger(claims=[Claim(dimension="frequency", kind="observed", anchored=True, value="About 120 returns a week",
+                               evidence_quote="about 120 returns a week")], sensitive=[bad])
+    v = versions(led)["builders"]
+    assert v.safe and "120" not in v.markdown and "[figure withheld]" in v.markdown
