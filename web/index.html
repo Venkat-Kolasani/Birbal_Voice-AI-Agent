@@ -16,6 +16,7 @@
   <span class="pill num" id="timer" hidden></span>
   <span class="pill live" id="livepill" hidden><span class="dot"></span>Live</span>
   <button class="btn ghost" id="toText" hidden title="Switch to typing (T)"></button>
+  <button class="btn ghost" id="toVoice" hidden title="Switch back to voice (V)"></button>
   <button class="btn ghost" id="mute" hidden title="Mute (M)"></button>
   <button class="btn" id="end" hidden title="End & review (E)">End &amp; review <kbd>E</kbd></button>
   <button class="btn ghost" id="theme"></button>
@@ -111,8 +112,11 @@ const STATUS = {
 };
 const q = (path) => `${path}${path.includes("?") ? "&" : "?"}s=${sid}`;
 
+let voiceOk = false;
 function paintHeader() {
   $("mute").hidden = $("toText").hidden = mode !== "voice";
+  $("toVoice").hidden = mode !== "text" || !voiceOk || demo;
+  $("toVoice").innerHTML = icon("mic") + "Continue with voice";
   $("composer").hidden = mode !== "text";
   $("wave").innerHTML = mode === "voice" ? Array.from({ length: 12 }, () => "<i></i>").join("") : "";
   $("toText").innerHTML = icon("keyboard") + "Type instead";
@@ -164,6 +168,20 @@ async function toText() {
 }
 $("toText").onclick = toText;
 
+async function toVoice() {
+  if (mode !== "text") return;
+  $("toVoice").disabled = true;
+  try {
+    await window.BirbalVoice.connect({ session: sid, onLevel: setLevel, onError: voiceFailed });
+    await api(q("/api/mode?mode=voice"), { method: "POST" });
+    mode = "voice"; liveError(""); paintHeader();
+    toast("Back on voice. Birbal will pick up where you left off.");
+  } catch (e) { liveError(e.message); }
+  finally { $("toVoice").disabled = false; }
+}
+$("toVoice").onclick = toVoice;
+api("/api/voice").then((v) => { voiceOk = v.ready; if (mode) paintHeader(); }).catch(() => {});
+
 $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const text = $("say").value.trim(); if (!text) return;
@@ -188,6 +206,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "e" || e.key === "E") endInterview();
   if ((e.key === "m" || e.key === "M") && mode === "voice") $("mute").click();
   if ((e.key === "t" || e.key === "T") && mode === "voice") toText();
+  if ((e.key === "v" || e.key === "V") && mode === "text" && voiceOk) toVoice();
 });
 
 const rowsSeen = new Map();
@@ -222,7 +241,7 @@ async function refresh() {
   let s; try { s = await api(q("/api/state")); } catch (e) { return; }
   if (s.status === "error" && mode === "voice") {  // any voice service failure: keep the interview, continue typing
     await toText();
-    toast("Voice hiccup. Continuing by typing. Nothing is lost.");
+    toast("Voice hiccup. Continuing by typing. Press Continue with voice to try again.");
     return;
   }
   $("timer").textContent = mmss(s.elapsed);
