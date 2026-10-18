@@ -1,7 +1,19 @@
 """Deterministic interview controller: merges Scribe output into the ledger and picks the next focus."""
+import re
 from .schema import DIMENSIONS, GapReport, Ledger, ScribeOutput
 
 READBACK_AFTER_MIN = 8.0
+# Public tools and channels are never secrets, whatever the Scribe says.
+PUBLIC_TOOLS = {"excel", "google", "forms", "form", "sheets", "whatsapp", "sms", "email", "gmail", "zoom", "tally",
+                "upi", "phone", "phones", "laptop", "pdf", "word", "powerpoint", "slack", "teams", "drive", "docs"}
+
+
+_FILLER = {"a", "an", "the", "s", "sheet", "sheets", "file", "files", "teacher", "teachers", "our", "my", "their"}
+
+
+def _public(span: str) -> bool:
+    words = [w for w in re.findall(r"[a-z]+", span.lower()) if w not in _FILLER]
+    return bool(words) and all(w in PUBLIC_TOOLS for w in words)
 
 
 def merge(ledger: Ledger, out: ScribeOutput, turn: int) -> Ledger:
@@ -12,6 +24,8 @@ def merge(ledger: Ledger, out: ScribeOutput, turn: int) -> Ledger:
         ledger.claims.append(c)
     known = {s.span.lower() for s in ledger.sensitive}
     for s in out.sensitive:
+        if _public(s.span):
+            continue
         if s.span.lower() not in known:
             s.turn = turn
             ledger.sensitive.append(s)
