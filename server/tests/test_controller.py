@@ -73,3 +73,11 @@ def test_unknown_with_lead_settles_dimension():
 def test_readback_on_time_or_done():
     assert gap_report(Ledger(), 8.0).ready_for_readback
     assert gap_report(Ledger(owner_done=True), 1).focus == "readback"
+
+
+def test_public_tools_are_never_secrets():
+    led = Ledger()
+    merge(led, ScribeOutput(sensitive=[Sensitive(span="teacher's Excel sheet", category="internal_system"),
+                                       Sensitive(span="Google Form", category="internal_system"),
+                                       Sensitive(span="Kaveri Bank", category="org_or_partner_name")]), 1)
+    assert [s.span for s in led.sensitive] == ["Kaveri Bank"]
