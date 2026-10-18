@@ -64,6 +64,8 @@ let AUD = [["me", "For me", "Everything, with quotes"], ["builders", "For builde
 let data = null, cur = "builders";
 if (token) {
   AUD = AUD.slice(1);
+  $("share").insertAdjacentHTML("afterend", '<button class="btn" id="sharedPdf">Download PDF</button>');
+  $("sharedPdf").onclick = () => printBrief();
   document.title = "Birbal · Shared brief";
   document.querySelector(".crumb").textContent = "Shared brief";
   ["approve", "dl"].forEach((id) => $(id).hidden = true);
@@ -147,9 +149,20 @@ function render() {
   $("approve").title = blocked ? "A private item is visible in a shareable version" : "Approve (⌘↵)";
   $("approve").innerHTML = data.approved ? icon("check") + " Approved" : "Approve " + icon("arrow");
   $("menu").innerHTML = ["md", "json"].map((f) => `<a href="/api/export/${cur}.${f}?s=${sid}" aria-disabled="${cur !== "me" && !data.approved}">${f === "md" ? "Markdown" : "JSON"}<span style="color:var(--faint)">.${f}</span></a>`).join("")
+    + `<a href="#" id="pdf" aria-disabled="${cur !== "me" && !data.approved && !token}">PDF<span style="color:var(--faint)">.pdf</span></a>`
     + `<a href="#" id="copy">Copy to clipboard</a>`
     + (cur !== "me" && !data.approved ? '<div style="padding:6px 10px;font-size:12px;color:var(--faint)">Approve to export shareable versions</div>' : "");
+  $("pdf").onclick = (e) => { e.preventDefault(); closeMenu(); printBrief(); };
   $("copy").onclick = async (e) => { e.preventDefault(); await navigator.clipboard.writeText(v.markdown); toast("Copied " + AUD.find((a) => a[0] === cur)[1]); closeMenu(); };
+}
+
+function printBrief() {
+  // The browser's "Save as PDF" keeps text selectable and the layout exact; no PDF library needed.
+  const name = AUD.find((a) => a[0] === cur)[1];
+  const prev = document.title;
+  document.title = `Birbal Brief - ${name}`;
+  window.print();
+  setTimeout(() => (document.title = prev), 500);
 }
 
 let pop = null;
