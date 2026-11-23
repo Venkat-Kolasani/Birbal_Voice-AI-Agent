@@ -223,15 +223,20 @@ async def run_bot(connection, session: Session) -> None:
     transport = SmallWebRTCTransport(params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
                                      webrtc_connection=connection)
     # Resuming a session (back from typing, or after a refresh): give the Talker the recent conversation.
+    turns = session.ledger.transcript
     history = [{"role": "assistant" if t.role == "birbal" else "user", "content": t.text}
-               for t in session.ledger.transcript[-MAX_CONTEXT_MESSAGES:]]
+               for t in turns[-MAX_CONTEXT_MESSAGES:]]
     while history and history[0]["role"] != "user":
         history = history[1:]
     opening = OPENING_LINES.get(session.lang, OPENING_LINE)
-    resuming = bool(session.ledger.transcript)
-    has_answer = any(t.role == "owner" for t in session.ledger.transcript)
-    if resuming and not has_answer:
-        history = [{"role": "assistant", "content": opening}]
+    first_answer = next((i for i, t in enumerate(turns) if t.role == "owner"), len(turns))
+    # A nudge before the first answer, or an answer without a Talker reply, leaves the opening unanswered.
+    opening_pending = not any(t.role == "birbal" for t in turns[first_answer:])
+    resume_question = None
+    if turns:
+        resume_question = opening if opening_pending else session.last_birbal()
+        if opening_pending:
+            history = [{"role": "assistant", "content": opening}, *history[-max(1, MAX_CONTEXT_MESSAGES - 1):]]
     context = LLMContext(messages=history or None)
     # Turn-taking: Pipecat's default stop strategy is the bundled smart-turn model (judges whether the sentence is
     # finished), so VAD only needs a short pause (Pipecat default 0.2 s; we use 0.4 s for people who pause to think).
@@ -276,6 +281,7 @@ async def run_bot(connection, session: Session) -> None:
     worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True, enable_usage_metrics=True))
     await runner.add_workers(worker)
     idle_nudged = False
+    asked_on_resume = None
 
     recent_errors: list[float] = []
 
@@ -292,14 +298,15 @@ async def run_bot(connection, session: Session) -> None:
 
     @transport.event_handler("on_client_connected")
     async def on_connected(transport, client):
+        nonlocal asked_on_resume
         if not _active(session):
             await runner.cancel()
             return
         logger.info("voice client connected")
         expect_reply()
-        if resuming:
-            question = (session.last_birbal() or "Where were we?") if has_answer else opening
-            await worker.queue_frames([TTSSpeakFrame(f"I'm back. {question}", append_to_context=False)])
+        if resume_question is not None:
+            asked_on_resume = resume_question
+            await worker.queue_frames([TTSSpeakFrame(f"I'm back. {resume_question}", append_to_context=False)])
         else:
             await worker.queue_frames([TTSSpeakFrame(opening)])
 
@@ -312,12 +319,13 @@ async def run_bot(connection, session: Session) -> None:
 
     @user_agg.event_handler("on_user_turn_stopped")
     async def on_user_turn(aggregator, strategy, message):
-        nonlocal idle_nudged
+        nonlocal idle_nudged, asked_on_resume
         idle_nudged = False
         if _active(session) and message.content:
             transcript.clear()
             session.status = "thinking"
-            session.add_owner(message.content)
+            session.add_owner(message.content, asked=asked_on_resume)
+            asked_on_resume = None
             expect_reply()
 
     @assistant_agg.event_handler("on_assistant_turn_stopped")

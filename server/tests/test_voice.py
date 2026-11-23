@@ -9,6 +9,7 @@ from pipecat.processors.frame_processor import FrameProcessor
 
 import api
 import bot
+from brain.schema import ScribeOutput
 from brain.session import SessionStore
 
 
@@ -251,9 +252,11 @@ def test_worker_timeout_or_failure_routes_to_text(voice, monkeypatch, caplog, fa
 
 
 @pytest.mark.parametrize("audio_starts", [False, True])
-@pytest.mark.parametrize("prior_turn", [None, "intro", "nudge"])
+@pytest.mark.parametrize("prior_turn", [None, "intro", "nudge", "failed_reply", "followup"])
 def test_opening_audio_deadline(monkeypatch, audio_starts, prior_turn):
     frames_sent = []
+    history = []
+    questions = []
     class Events:
         def __init__(self):
             self.events = {}
@@ -284,6 +287,10 @@ def test_opening_audio_deadline(monkeypatch, audio_starts, prior_turn):
         async def run(self):
             await transport.events["on_client_connected"](transport, None)
             await asyncio.sleep(0.03)
+            if audio_starts and prior_turn:
+                await user.events["on_user_turn_stopped"](user, None, SimpleNamespace(content="Orders fail."))
+                await session.settle()
+                status_tap.clear_reply_timeout()
 
         async def cancel(self):
             pass
@@ -291,10 +298,18 @@ def test_opening_audio_deadline(monkeypatch, audio_starts, prior_turn):
     transport, worker = Transport(), Worker()
     user, assistant = Events(), Events()
     status_tap = SimpleNamespace()
+
+    def make_aggregators(context, **kwargs):
+        history.extend(context.get_messages())
+        return user, assistant
+
+    async def record_question(asked, said, turn):
+        questions.append(asked)
+
     monkeypatch.setattr(bot, "REPLY_TIMEOUT_SECONDS", 0.01)
     monkeypatch.setattr(bot, "SmallWebRTCTransport", lambda **kwargs: transport)
     monkeypatch.setattr(bot, "SileroVADAnalyzer", lambda **kwargs: None)
-    monkeypatch.setattr(bot, "LLMContextAggregatorPair", lambda *args, **kwargs: (user, assistant))
+    monkeypatch.setattr(bot, "LLMContextAggregatorPair", make_aggregators)
     monkeypatch.setattr(bot, "Pipeline", lambda processors: processors)
     monkeypatch.setattr(bot, "PipelineWorker", lambda *args, **kwargs: worker)
     monkeypatch.setattr(bot, "WorkerRunner", lambda **kwargs: Runner())
@@ -303,12 +318,26 @@ def test_opening_audio_deadline(monkeypatch, audio_starts, prior_turn):
         monkeypatch.setattr(bot, name, lambda lang: None)
     session = api.Session()
     session.start(mode="voice")
+    monkeypatch.setattr(session, "_scribe", record_question)
     if prior_turn:
         session.add_birbal(bot.OPENING_LINE)
-    if prior_turn == "nudge":
+    if prior_turn in {"nudge", "failed_reply"}:
         session.add_birbal("Take your time.")
+    if prior_turn in {"failed_reply", "followup"}:
+        session.add_owner("The order queue is stuck.", scribe_out=ScribeOutput())
+    if prior_turn == "followup":
+        session.add_birbal("When did it start?")
     asyncio.run(bot.run_bot(None, session))
-    assert session.status == ("listening" if audio_starts else "error")
+    expected_status = "thinking" if prior_turn else "listening"
+    assert session.status == (expected_status if audio_starts else "error")
     assert len(frames_sent) == 1
-    assert frames_sent[0].text == (f"I'm back. {bot.OPENING_LINE}" if prior_turn else bot.OPENING_LINE)
+    question = "When did it start?" if prior_turn == "followup" else bot.OPENING_LINE
+    assert frames_sent[0].text == (f"I'm back. {question}" if prior_turn else question)
     assert frames_sent[0].append_to_context is (prior_turn is None)
+    if prior_turn in {"nudge", "failed_reply"}:
+        assert history[0] == {"role": "assistant", "content": question}
+        assert all(m["content"] != "Take your time." for m in history)
+    if prior_turn == "failed_reply":
+        assert history[1:] == [{"role": "user", "content": "The order queue is stuck."}]
+    if audio_starts and prior_turn:
+        assert questions == [question]

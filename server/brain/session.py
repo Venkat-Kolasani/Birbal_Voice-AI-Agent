@@ -72,11 +72,12 @@ class Session:
             self.ledger.transcript.append(Turn(role="birbal", text=text.strip(), t=self._t()))
             self.dirty = True
 
-    def add_owner(self, text: str, scribe_out: Optional[ScribeOutput] = None) -> None:
+    def add_owner(self, text: str, scribe_out: Optional[ScribeOutput] = None, *, asked: str | None = None) -> None:
         """Record an owner turn and run the Scribe in the background (never blocks the Talker)."""
         if not text.strip():
             return
-        asked = self.last_birbal()
+        if asked is None:
+            asked = self.last_birbal()
         self.interim = ""
         self.dirty = True
         self.ledger.transcript.append(Turn(role="owner", text=text.strip(), t=self._t()))
