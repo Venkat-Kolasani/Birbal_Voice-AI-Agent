@@ -113,6 +113,7 @@ const STATUS = {
 const q = (path) => `${path}${path.includes("?") ? "&" : "?"}s=${sid}`;
 
 let voiceOk = false;
+let starting = false, switching = false, ending = false;
 function paintHeader() {
   $("mute").hidden = $("toText").hidden = mode !== "voice";
   $("toVoice").hidden = mode !== "text" || !voiceOk || demo;
@@ -136,17 +137,18 @@ function showLive() {
 function paintMute() { $("mute").innerHTML = icon(muted ? "micoff" : "mic") + (muted ? "Unmute" : "Mute") + " <kbd>M</kbd>"; }
 
 async function begin(m) {
+  if (starting) return;
+  starting = true;
   mode = m; $("startErr").hidden = true;
   try {
-    if (m === "voice") {
-      if (!window.BirbalVoice) throw new Error("Voice client failed to load. Use “Type instead”.");
-      const v = await api(`/api/voice?lang=${lang}`);
-      if (!v.ready) throw new Error(v.why + " Use “Type instead” meanwhile.");
-    }
     sid = (await api(`/api/start?mode=${m}&lang=${lang}`, { method: "POST" })).id;
-    if (m === "voice") await window.BirbalVoice.connect({ session: sid, onLevel: setLevel, onError: voiceFailed });
+    if (m === "voice") {
+      try { await connectVoice(); }
+      catch (e) { await switchToText(e.message); }
+    }
     showLive();
   } catch (e) { $("startErr").textContent = e.message; $("startErr").hidden = false; }
+  finally { starting = false; }
 }
 $("startVoice").onclick = () => begin("voice");
 $("startText").onclick = () => begin("text");
@@ -157,33 +159,54 @@ function setLevel(v) { // 0..1 from the mic analyser
   for (let i = 0; i < bars.length; i++) bars[i].style.height = `${4 + Math.max(0, v * 16 * (0.6 + 0.4 * Math.sin(i + Date.now() / 120)))}px`;
 }
 function liveError(msg) { $("liveErr").textContent = msg; $("liveErr").hidden = !msg; }
-function voiceFailed(msg) { liveError(msg + " Switching to typing keeps your interview."); }
 
-async function toText() {
-  if (mode !== "voice") return;
-  try { await window.BirbalVoice?.disconnect(); } catch (e) {}
-  await api(q("/api/mode?mode=text"), { method: "POST" }).catch(() => {});
-  mode = "text"; liveError(""); paintHeader();
-  toast("Switched to typing. Your interview continues.");
+async function connectVoice() {
+  if (!window.BirbalVoice) throw new Error("Voice client failed to load.");
+  await window.BirbalVoice.connect({ session: sid, lang, onLevel: setLevel, onError: (msg) => toText(msg) });
+  window.BirbalVoice.setMuted(muted);
 }
-$("toText").onclick = toText;
+
+async function switchToText(reason) {
+  await window.BirbalVoice?.disconnect();
+  if (ending) return;
+  await api(q("/api/mode?mode=text"), { method: "POST" });
+  if (ending) return;
+  mode = "text";
+  liveError(reason ? reason + " You can continue by typing." : "");
+  paintHeader();
+}
+
+async function toText(reason) {
+  if (mode !== "voice" || switching || ending) return;
+  switching = true;
+  try {
+    await switchToText(reason);
+    if (!reason && !ending) toast("Switched to typing. Your interview continues.");
+  } catch (e) { liveError(e.message); }
+  finally { switching = false; }
+}
+$("toText").onclick = () => toText();
 
 async function toVoice() {
-  if (mode !== "text") return;
+  if (mode !== "text" || switching || ending || $("say").disabled) return;
+  switching = true;
   $("toVoice").disabled = true;
+  $("say").disabled = true;
   try {
-    await window.BirbalVoice.connect({ session: sid, onLevel: setLevel, onError: voiceFailed });
-    await api(q("/api/mode?mode=voice"), { method: "POST" });
+    await connectVoice();
+    if (ending) return;
     mode = "voice"; liveError(""); paintHeader();
     toast("Back on voice. Birbal will pick up where you left off.");
-  } catch (e) { liveError(e.message); }
-  finally { $("toVoice").disabled = false; }
+  } catch (e) {
+    try { await switchToText(e.message); } catch (err) { liveError(err.message); }
+  } finally { switching = false; $("toVoice").disabled = false; $("say").disabled = false; }
 }
 $("toVoice").onclick = toVoice;
 api("/api/voice").then((v) => { voiceOk = v.ready; if (mode) paintHeader(); }).catch(() => {});
 
 $("composer").onsubmit = async (e) => {
   e.preventDefault();
+  if (mode !== "text" || switching || ending || $("say").disabled) return;
   const text = $("say").value.trim(); if (!text) return;
   $("say").value = ""; $("say").disabled = true;
   try { await api(q("/api/turn"), { method: "POST", body: { text } }); liveError(""); }
@@ -193,9 +216,11 @@ $("composer").onsubmit = async (e) => {
 
 $("end").onclick = endInterview;
 async function endInterview() {
+  if (ending) return;
+  ending = true;
   $("end").disabled = true; $("end").textContent = "Writing brief…";
   clearInterval(poll);
-  if (mode === "voice") try { await window.BirbalVoice.disconnect(); } catch (e) {}
+  await window.BirbalVoice?.disconnect();
   await api(q("/api/end"), { method: "POST" }).catch(() => {});
   location.href = `/review?s=${sid}`;
 }
@@ -239,9 +264,8 @@ function renderRows(s) {
 
 async function refresh() {
   let s; try { s = await api(q("/api/state")); } catch (e) { return; }
-  if (s.status === "error" && mode === "voice") {  // any voice service failure: keep the interview, continue typing
-    await toText();
-    toast("Voice hiccup. Continuing by typing. Press Continue with voice to try again.");
+  if (s.status === "error" && mode === "voice") {
+    await toText(s.error || "Voice disconnected.");
     return;
   }
   $("timer").textContent = mmss(s.elapsed);
@@ -309,8 +333,10 @@ async function home() {
       const st = await api(`/api/state?s=${s0}`);
       sid = s0;
       if (st.ended) { location.href = `/review?s=${sid}`; return; }
-      mode = "text"; showLive();  // resume after refresh: continue by typing
-      toast("Interview resumed. Continue by typing.");
+      lang = st.lang;
+      if (st.mode === "voice") await switchToText();
+      mode = st.mode === "demo" ? "demo" : "text"; showLive();
+      if (mode === "text") toast("Interview resumed. Continue by typing.");
       return;
     } catch (e) { history.replaceState(null, "", "/start"); }
   }

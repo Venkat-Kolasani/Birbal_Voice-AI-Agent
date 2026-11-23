@@ -1,48 +1,103 @@
-// Minimal browser client for Pipecat SmallWebRTC (POST /api/offer with a complete SDP).
-// shortcut: no ICE trickle; waits for full ICE gathering. Fine on localhost/LAN; add trickle (PATCH /api/offer) for remote use.
-let pc = null, stream = null, audioEl = null, raf = 0, ctx = null;
+let active = null;
 
-async function connect({ session, onLevel = () => {}, onError = () => {} } = {}) {
-  const cfg = await fetch("/api/voice").then((r) => r.json()).catch(() => ({}));
+function loadSDK() {
+  return Promise.all([
+    import("https://esm.sh/@pipecat-ai/client-js@1.16.0?target=es2022"),
+    import("https://esm.sh/@pipecat-ai/small-webrtc-transport@1.11.2?bundle&deps=@pipecat-ai/client-js@1.16.0&target=es2022"),
+  ]);
+}
+
+function release(client) {
+  if (!client) return;
+  client.tracks().local.audio?.stop();
+  void client.disconnect().catch(() => {});
+}
+
+function close(run, reason) {
+  if (active !== run) return;
+  active = null;
+  run.abort.abort(reason);
+  run.audio.pause();
+  run.audio.srcObject = null;
+  release(run.client);
+}
+
+async function connect({ session, lang = "auto", onLevel = () => {}, onError = () => {} } = {}) {
+  if (active) throw new Error("Voice is already connecting or connected.");
+  const run = { abort: new AbortController(), audio: new Audio() };
+  active = run;
+  const signal = run.abort.signal;
+  const aborted = new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+  const timer = setTimeout(() => close(run, new Error("Voice could not connect in time.")), 15000);
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch (e) {
-    throw new Error("Mic blocked. Allow microphone access in your browser, or use “Type instead”.");
+    await Promise.race([start(run, session, lang, onLevel, onError), aborted]);
+    signal.throwIfAborted();
+    run.ready = true;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error("Voice could not connect.");
+    close(run, error);
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  pc = new RTCPeerConnection({ iceServers: cfg.ice || [{ urls: "stun:stun.l.google.com:19302" }] });
-  stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-  pc.createDataChannel("chat");
-  audioEl = new Audio(); audioEl.autoplay = true;
-  pc.ontrack = (e) => { audioEl.srcObject = e.streams[0] || new MediaStream([e.track]); audioEl.play().catch(() => {}); };
-  pc.onconnectionstatechange = () => {
-    if (["failed", "disconnected"].includes(pc.connectionState)) onError("Voice connection lost. Use “Type instead”, or refresh to retry.");
+}
+
+async function start(run, session, lang, onLevel, onError) {
+  const signal = run.abort.signal;
+  const response = await fetch(`/api/voice?lang=${encodeURIComponent(lang)}`, { signal });
+  if (!response.ok) throw new Error("Voice is unavailable.");
+  const cfg = await response.json();
+  if (!cfg.ready) throw new Error(cfg.why || "Voice is unavailable.");
+  const [{ PipecatClient, LogLevel }, { SmallWebRTCTransport }] = await loadSDK();
+  signal.throwIfAborted();
+
+  const fail = (message) => {
+    if (active !== run) return;
+    close(run, new Error(message));
+    if (run.ready) onError(message);
   };
-  await pc.setLocalDescription(await pc.createOffer());
-  await new Promise((res) => {
-    if (pc.iceGatheringState === "complete") return res();
-    const t = setTimeout(res, 2500);
-    pc.addEventListener("icegatheringstatechange", () => { if (pc.iceGatheringState === "complete") { clearTimeout(t); res(); } });
+  const disconnected = () => fail("Voice connection lost.");
+  const client = run.client = new PipecatClient({
+    transport: new SmallWebRTCTransport({ iceServers: cfg.ice }),
+    enableMic: true,
+    enableCam: false,
+    disconnectOnBotDisconnect: false,
+    callbacks: {
+      onDisconnected: disconnected,
+      onBotDisconnected: disconnected,
+      onTransportStateChanged: (state) => { if (state === "error") disconnected(); },
+      onLocalAudioLevel: (level) => { if (!signal.aborted) onLevel(level); },
+      onTrackStarted: (track, participant) => {
+        if (signal.aborted || participant?.local || track.kind !== "audio") return;
+        run.audio.srcObject = new MediaStream([track]);
+        run.audio.play().catch(() => fail("Your browser blocked Birbal's audio."));
+      },
+    },
   });
-  const r = await fetch("/api/offer", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type, request_data: { session } }) });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || "Voice server refused the connection.");
-  await pc.setRemoteDescription(await r.json());
-
-  ctx = new AudioContext();
-  const an = ctx.createAnalyser(); an.fftSize = 256;
-  ctx.createMediaStreamSource(stream).connect(an);
-  const buf = new Uint8Array(an.frequencyBinCount);
-  const tick = () => { an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128)); onLevel(Math.min(1, m / 60)); raf = requestAnimationFrame(tick); };
-  tick();
+  client.setLogLevel(LogLevel.WARN);
+  try {
+    try {
+      await client.initDevices();
+    } catch {
+      throw new Error("Mic blocked. Allow microphone access in your browser, or use “Type instead”.");
+    }
+    signal.throwIfAborted();
+    if (!client.tracks().local.audio) throw new Error("No microphone available.");
+    await client.connect({ webrtcRequestParams: {
+      endpoint: new URL("/api/offer", window.location.href).href,
+      requestData: { session },
+    } });
+  } finally {
+    // Browsers can grant microphone access after a timed-out permission prompt.
+    if (signal.aborted) release(client);
+  }
 }
 
-function setMuted(m) { stream?.getAudioTracks().forEach((t) => (t.enabled = !m)); }
+function setMuted(muted) { active?.client?.enableMic(!muted); }
 
-async function disconnect() {
-  cancelAnimationFrame(raf);
-  stream?.getTracks().forEach((t) => t.stop());
-  pc?.close(); ctx?.close().catch(() => {});
-  pc = stream = ctx = null;
+function disconnect() {
+  if (active) close(active, new Error("Voice was stopped."));
 }
 
+window.addEventListener("pagehide", disconnect);
 window.BirbalVoice = { connect, disconnect, setMuted };

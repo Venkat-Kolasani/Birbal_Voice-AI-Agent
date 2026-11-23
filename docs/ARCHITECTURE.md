@@ -248,7 +248,7 @@ Every bonus point comes from one structure, the ledger:
 | POST | `/api/approve?s=` | server-side leak gate → export + share token |
 | GET | `/api/export/{audience}.{md\|json}?s=` | download (shareable versions only after approval) |
 | GET | `/api/shared/{token}` · `/b/{token}` | read-only builder + public versions |
-| POST/PATCH | `/api/offer` | WebRTC offer / ICE for voice (`request_data.session`) |
+| POST/PATCH | `/api/offer` | Pipecat WebRTC offer / trickle ICE (offer: `requestData.session`) |
 
 ---
 
@@ -277,5 +277,9 @@ Every bonus point comes from one structure, the ledger:
 | Public, typed only | any long-running Python host + persistent disk (`BIRBAL_DATA`) |
 | Public, voice | needs TURN: Pipecat `DailyTransport` (Daily free tier), Pipecat Cloud, or SmallWebRTC + coturn |
 | Production must-dos | owner auth, paid AI tiers (free tiers may use data for training), HTTPS, per-session secrets |
+
+**Voice process limits:** Set `VOICE_MAX_CONCURRENT` (default 4) and `VOICE_MAX_SECONDS` (900 s) for one server process. The browser has 15 s to reach bot-ready; `VOICE_REPLY_TIMEOUT_SECONDS` (12 s) bounds the wait for speech after an opening or a committed owner turn. Voice failures leave committed transcript entries in the interview so typing can pick up. To resume voice, the browser starts a new peer in the same interview.
+
+**Voice rollout gate:** Test browser microphone and speaker, interruptions, provider failure, and TURN from a restricted network. The local handshake test does not exercise the CDN SDK or real audio providers. Require authentication and approved provider data handling before real company interviews.
 
 **Languages:** Auto (follows Hinglish), English, हिंदी, ಕನ್ನಡ. The interview runs in that language; **the brief is always in English.** Hindi and Kannada voice use Sarvam; Kannada speech recognition uses Sarvam.

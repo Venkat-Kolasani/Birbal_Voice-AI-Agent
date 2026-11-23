@@ -111,3 +111,9 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 - Built: `web/landing.html` at `/` (hero, self-playing interview example, four grades, privacy features, benchmark stats); the app moved to `/start`; links updated.
 - Providers set: Talker Groq gpt-oss-120b; Scribe Command Code gpt-5.6-luna; Gemini flash-lite in the chain. Benchmark 27/28 (96%).
 - Verified: all routes 200; landing checked in Chrome at 1440 px. 51 tests pass.
+
+## 2026-11-23 22:15 IST — Voice lifecycle and same-interview fallback
+- `server/api.py`, `server/bot.py`, `.env.example`: run one peer per interview, enforce per-process limits, bound the wait for speech, and close peer and pipeline on a mode switch, end, or shutdown.
+- `web/voice.js`, `web/index.html`: use the Pipecat SDK, release the mic on failure or navigation, and keep the interview open for typing when voice fails.
+- Verified: `uv run --frozen pytest -q` (60 passed, including a real local WebRTC and RTVI handshake using provider doubles); `node --test scripts/voice.test.cjs` (3 passed with a client double); JavaScript syntax and `git diff --check` pass.
+- Next: test live browser microphone, playback and barge-in, then TURN on a restricted network. Auth, storage, privacy, sharing and deployment are unchanged.

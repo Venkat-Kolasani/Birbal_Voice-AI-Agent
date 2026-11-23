@@ -174,3 +174,8 @@ Template:
   - `xiaomi/mimo-v2.6-flash` 9 s, `Qwen3.8-Flash` 7 s + Scribe timeout, `Qwen3.7-Flash` 20 s, `claude-haiku-5-5` 2.2 s then a 403/62 s stall (needs the Anthropic-format route)
 - Order stays Gemini → Groq → Command Code. The alt provider is only hit when both free tiers are limited. Cost on a $10 plan: a full interview ≈ ₹2–5.
 - Benchmark (Groq gpt-oss-120b, 28 labelled sentences): **27/28 = 96%** grade accuracy; the one miss graded an opinion ("drivers are lazy") as Seen.
+
+## D-018 — Bound voice sessions without changing the interview pipeline (2026-11-23)
+- Use the maintained [Pipecat Small WebRTC browser transport](https://docs.pipecat.ai/client/js/transports/small-webrtc) for signaling, trickle ICE and device management instead of maintaining WebRTC code. Load pinned SDK releases on demand from a CDN to keep the static no-build UI; serve a lockfile-pinned bundle from the app before a restricted deployment.
+- Keep the cascade and asynchronous Scribe. Borrow explicit session teardown and transcript continuity from [LiveKit Agents' session lifecycle](https://docs.livekit.io/agents/logic/sessions/), not its runtime. A provider failure, expired reply or exhausted connection falls back to typing in the same interview. A brief interruption may recover; a full peer restart requires the user to resume voice from text.
+- The concurrency cap is per process, and live sessions currently require one process. Before adding replicas, decide on media routing, shared state and admission control instead of assuming this cap is global.

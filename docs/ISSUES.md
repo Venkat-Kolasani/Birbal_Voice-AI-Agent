@@ -102,6 +102,10 @@ Template:
 - Cause: the LLM wrote a generalisation containing the number it was meant to hide.
 - Fix: `_safe_generalisation` in brief.py; test added.
 
+## ISS-016 — Pipecat full peer restart ends the existing voice worker [handled by fallback]
+- Pipecat 1.12.0 emits `disconnected` inside `renegotiate(restart_pc=True)`. The interview worker cancels on that event, so sending a new SDP answer would leave the browser with no pipeline.
+- Reject that restart with `409 Voice connection lost. Continue by typing or start voice again.`, release the peer, and preserve the interview for typing or a new connection.
+
 ## Known risks to watch (not yet issues)
 - flash-lite daily quota unknown; if it 429s mid-event, Groq carries text mode (8K TPM is enough for typed turns and the Scribe) and voice degrades to typing.
 - Pooling API keys from several accounts may breach provider terms (Google APIs ToS 2(d); Groq 6.3(d)(iii)). The risk is suspension on demo day.
