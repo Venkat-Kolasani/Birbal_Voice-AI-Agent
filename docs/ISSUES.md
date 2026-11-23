@@ -102,6 +102,14 @@ Template:
 - Cause: the LLM wrote a generalisation containing the number it was meant to hide.
 - Fix: `_safe_generalisation` in brief.py; test added.
 
+## ISS-016 — Private pilot review findings [resolved]
+- A raw owner download returned 200 without approval. The owner brief is now view-only; redacted downloads require approval.
+- Polling showed the reply before write acknowledgment. State now shows the previous turn and a pending-save notice until the write succeeds.
+- Shutting down before the autosave tick lost the last Scribe update. A graceful shutdown now drains notes with a deadline.
+- A resumed interview stayed below the eight-minute read-back threshold regardless of time passed. The clock now runs from the saved duration.
+- Demo landing links led to `404 Sharing is disabled in the private pilot.` The pilot opens its protected start page directly.
+- A denied review still showed approval and download controls. The page now shows them only once it has loaded the brief successfully.
+
 ## Known risks to watch (not yet issues)
 - flash-lite daily quota unknown; if it 429s mid-event, Groq carries text mode (8K TPM is enough for typed turns and the Scribe) and voice degrades to typing.
 - Pooling API keys from several accounts may breach provider terms (Google APIs ToS 2(d); Groq 6.3(d)(iii)). The risk is suspension on demo day.

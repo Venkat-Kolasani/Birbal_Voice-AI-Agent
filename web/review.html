@@ -14,13 +14,14 @@
   <span class="crumb">Review brief</span>
   <div class="spacer"></div>
   <div style="position:relative">
-    <button class="btn" id="dl" aria-haspopup="true" aria-expanded="false"></button>
+    <button class="btn" id="dl" hidden aria-haspopup="true" aria-expanded="false"></button>
     <div class="menu" id="menu" hidden></div>
   </div>
   <a class="btn ghost" href="/start" title="Start a new interview">New interview</a>
   <button class="btn" id="share" hidden title="Copy the read-only link to the approved builder brief"></button>
-  <button class="btn primary" id="approve"></button>
+  <button class="btn primary" id="approve" hidden></button>
   <button class="btn ghost" id="theme"></button>
+  <button class="btn ghost" id="signOut" hidden>Sign out</button>
 </div>
 
 <main class="review">
@@ -47,7 +48,7 @@
 </main>
 
 <dialog id="confirm">
-  <div class="dh">Share this brief?</div>
+  <div class="dh" id="confirmTitle">Share this brief?</div>
   <div class="db" id="confirmBody"></div>
   <div class="df"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="doApprove">Approve and share</button></div>
 </dialog>
@@ -56,6 +57,12 @@
 <script>
 initTheme();
 const $ = (id) => document.getElementById(id);
+let privatePilot = false;
+const pilotSetup = setupPilot(() => {
+  privatePilot = true;
+  $("confirmTitle").textContent = "Approve this brief for download?";
+  $("doApprove").textContent = "Approve";
+}).catch(() => {});
 const sid = new URLSearchParams(location.search).get("s");
 const token = location.pathname.startsWith("/b/") ? location.pathname.slice(3) : null;  // read-only shared view
 if (!sid && !token) location.href = "/start";
@@ -145,9 +152,12 @@ function render() {
 
   if (token) return;
   const blocked = ["builders", "everyone"].some((a) => !vs[a].safe);
+  $("approve").hidden = false;
   $("approve").disabled = blocked;
   $("approve").title = blocked ? "A private item is visible in a shareable version" : "Approve (⌘↵)";
   $("approve").innerHTML = data.approved ? icon("check") + " Approved" : "Approve " + icon("arrow");
+  $("dl").hidden = privatePilot && (cur === "me" || !data.approved);
+  if ($("dl").hidden) { closeMenu(); return; }
   $("menu").innerHTML = ["md", "json"].map((f) => `<a href="/api/export/${cur}.${f}?s=${sid}" aria-disabled="${cur !== "me" && !data.approved}">${f === "md" ? "Markdown" : "JSON"}<span style="color:var(--faint)">.${f}</span></a>`).join("")
     + `<a href="#" id="pdf" aria-disabled="${cur !== "me" && !data.approved && !token}">PDF<span style="color:var(--faint)">.pdf</span></a>`
     + `<a href="#" id="copy">Copy to clipboard</a>`
@@ -184,19 +194,21 @@ document.addEventListener("click", closeMenu);
 $("approve").onclick = () => {
   const n = data.private.length;
   const hidden = data.private.filter((p) => p.choice !== "keep").length;
-  $("confirmBody").textContent = `Builders and the public will see the redacted versions. ${hidden} of ${n} private item${n === 1 ? "" : "s"} ${hidden === 1 ? "is" : "are"} hidden or removed. The owner version stays with you.`;
+  $("confirmBody").textContent = privatePilot
+    ? "Approving makes the redacted versions available for you to download. Nothing is posted or shared."
+    : `Builders and the public will see the redacted versions. ${hidden} of ${n} private item${n === 1 ? "" : "s"} ${hidden === 1 ? "is" : "are"} hidden or removed. The owner version stays with you.`;
   $("confirm").showModal();
 };
 $("cancel").onclick = () => $("confirm").close();
 $("doApprove").onclick = async () => { $("confirm").close(); await load(api(q("/api/approve"), { method: "POST" })); if (data?.approved) toast("Approved. Shareable versions are ready to export."); };
 
 document.addEventListener("keydown", (e) => {
-  if (document.activeElement?.isContentEditable) return;
+  if (!data || document.activeElement?.isContentEditable) return;
   if (AUD[+e.key - 1]) { cur = AUD[+e.key - 1][0]; render(); }
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !$("approve").disabled) $("approve").click();
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !$("approve").hidden && !$("approve").disabled) $("approve").click();
   if (e.key === "Escape") { pop?.remove(); closeMenu(); }
 });
-load();
+pilotSetup.then(() => load());
 </script>
 </body>
 </html>

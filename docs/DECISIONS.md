@@ -174,3 +174,7 @@ Template:
   - `xiaomi/mimo-v2.6-flash` 9 s, `Qwen3.8-Flash` 7 s + Scribe timeout, `Qwen3.7-Flash` 20 s, `claude-haiku-5-5` 2.2 s then a 403/62 s stall (needs the Anthropic-format route)
 - Order stays Gemini → Groq → Command Code. The alt provider is only hit when both free tiers are limited. Cost on a $10 plan: a full interview ≈ ₹2–5.
 - Benchmark (Groq gpt-oss-120b, 28 labelled sentences): **27/28 = 96%** grade accuracy; the one miss graded an opinion ("drivers are lazy") as Seen.
+
+## Private pilot — Supabase Auth and owner-scoped Postgres (2026-11-23)
+- Reuse the existing Supabase integration instead of adding a second identity vendor or a password store. Verify asymmetric session tokens at the server and scope all raw interview access to the signed account ID, not the email or an interview link.
+- Keep pilot interviews in a new service-role-only table. Do not import ownerless demo rows or accept a local write as a durable pilot save. Keep voice and app-initiated sharing disabled in the pilot until their rollout controls are ready.

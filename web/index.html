@@ -20,6 +20,7 @@
   <button class="btn ghost" id="mute" hidden title="Mute (M)"></button>
   <button class="btn" id="end" hidden title="End & review (E)">End &amp; review <kbd>E</kbd></button>
   <button class="btn ghost" id="theme"></button>
+  <button class="btn ghost" id="signOut" hidden>Sign out</button>
 </div>
 
 <main id="startView" class="start">
@@ -45,7 +46,7 @@
   <div class="banner err" id="startErr" hidden role="alert"></div>
   <div class="ready" id="ready"></div>
   <section class="recent" id="recent" hidden>
-    <div class="label">Recent briefs</div>
+    <div class="label" id="recentLabel">Recent briefs</div>
     <div id="recentList"></div>
   </section>
 </main>
@@ -58,6 +59,7 @@
       <div class="wave" id="wave" aria-hidden="true"></div>
     </div>
     <div class="banner err" id="liveErr" hidden role="alert"></div>
+    <div class="banner err" id="saveWarning" hidden role="status">Not saved yet. Keep this interview open while Birbal retries.</div>
     <div class="transcript" id="transcript" aria-live="polite" aria-label="Transcript"></div>
     <form class="composer" id="composer" hidden>
       <label class="sr" for="say">Your answer</label>
@@ -84,6 +86,15 @@
 <script>
 initTheme();
 const $ = (id) => document.getElementById(id);
+const pilotSetup = setupPilot(() => {
+  isPrivatePilot = true;
+  $("startDemo").hidden = true;
+  $("startVoice").hidden = true;
+  $("startText").textContent = "Start interview";
+  $("m1").textContent = "Only you can open your interviews.";
+  $("m3").textContent = "Birbal sends answers to its configured AI providers to run the interview and write the brief.";
+  $("recentLabel").textContent = "Your recent interviews";
+}).catch(() => {});
 const demo = new URLSearchParams(location.search).has("demo");
 $("startVoice").innerHTML = icon("mic") + "Start interview";
 $("startText").innerHTML = icon("keyboard") + "Type instead";
@@ -95,6 +106,7 @@ $("m3").innerHTML = icon("lock") + "Birbal asks before using any name or number 
 $("end").innerHTML = 'End &amp; review <kbd>E</kbd>';
 
 let mode = null, poll = null, muted = false, lastT = 0, sid = null, lang = "auto";
+let isPrivatePilot = false;
 const LANG_HINT = { auto: "Mixes Hindi and English as you do. The brief is always in English.",
   en: "Interview in English. The brief is in English.", hi: "Interview in Hindi. The brief is in English.",
   kn: "Interview in Kannada. The brief is in English." };
@@ -187,16 +199,26 @@ $("composer").onsubmit = async (e) => {
   const text = $("say").value.trim(); if (!text) return;
   $("say").value = ""; $("say").disabled = true;
   try { await api(q("/api/turn"), { method: "POST", body: { text } }); liveError(""); }
-  catch (err) { liveError(err.message); $("say").value = text; }
+  catch (err) {
+    if (err.savePending) $("saveWarning").hidden = false;
+    else { liveError(err.message); $("say").value = text; }
+  }
   finally { $("say").disabled = false; $("say").focus(); refresh(); }
 };
 
 $("end").onclick = endInterview;
 async function endInterview() {
+  if ($("end").disabled) return;
   $("end").disabled = true; $("end").textContent = "Writing brief…";
-  clearInterval(poll);
   if (mode === "voice") try { await window.BirbalVoice.disconnect(); } catch (e) {}
-  await api(q("/api/end"), { method: "POST" }).catch(() => {});
+  try { await api(q("/api/end"), { method: "POST" }); }
+  catch (error) {
+    $("end").disabled = false;
+    $("end").innerHTML = 'End &amp; review <kbd>E</kbd>';
+    liveError(error.message);
+    return;
+  }
+  clearInterval(poll);
   location.href = `/review?s=${sid}`;
 }
 $("mute").onclick = () => { muted = !muted; window.BirbalVoice?.setMuted(muted); paintMute(); };
@@ -239,6 +261,7 @@ function renderRows(s) {
 
 async function refresh() {
   let s; try { s = await api(q("/api/state")); } catch (e) { return; }
+  $("saveWarning").hidden = !s.save_pending;
   if (s.status === "error" && mode === "voice") {  // any voice service failure: keep the interview, continue typing
     await toText();
     toast("Voice hiccup. Continuing by typing. Press Continue with voice to try again.");
@@ -294,15 +317,16 @@ async function home() {
     const list = await api("/api/sessions");
     if (list.length) {
       $("recent").hidden = false;
-      $("recentList").innerHTML = list.map((x) => `<a class="rec" href="/review?s=${x.id}">
+      $("recentList").innerHTML = list.map((x) => `<a class="rec" href="/${isPrivatePilot && !x.ended ? "start" : "review"}?s=${encodeURIComponent(x.id)}">
         <span class="t">${esc(x.title)}</span>
         <span class="m num">${esc(x.created.slice(0, 16).replace("T", " "))} · ${x.clear}/9 clear · ${x.private} private
         ${x.approved ? '<span class="chip ok">Approved</span>' : x.ended ? '<span class="chip">Draft</span>' : '<span class="chip">In progress</span>'}</span></a>`).join("");
     }
-  } catch (e) {}
+  } catch (e) { if (isPrivatePilot) { $("startErr").textContent = e.message; $("startErr").hidden = false; } }
 }
 
 (async () => {
+  await pilotSetup;
   const s0 = params.get("s");
   if (s0) {
     try {

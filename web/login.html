@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Birbal · Sign in</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="bar"><a class="brand" href="/"><span class="mark">B</span>Birbal</a></div>
+<main class="start">
+  <h1>Sign in to Birbal.</h1>
+  <p class="lead">Use the work email your pilot administrator approved. We’ll send you a one-time code.</p>
+  <form id="emailForm" class="row">
+    <label class="sr" for="email">Work email</label>
+    <input class="btn" type="email" id="email" required maxlength="254" autocomplete="email" placeholder="Work email">
+    <button class="btn primary" type="submit">Send code</button>
+  </form>
+  <form id="codeForm" class="row" hidden>
+    <label class="sr" for="code">One-time code</label>
+    <input class="btn" id="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" placeholder="One-time code">
+    <button class="btn primary" type="submit">Sign in</button>
+    <button class="btn ghost" id="changeEmail" type="button">Change email</button>
+  </form>
+  <p id="signInMessage" role="status" aria-live="polite"></p>
+</main>
+<script src="/static/common.js"></script>
+<script>
+const byId = (id) => document.getElementById(id);
+const email = byId("email"), code = byId("code"), message = byId("signInMessage");
+const emailForm = byId("emailForm"), codeForm = byId("codeForm");
+function register(form, action) {
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const submit = form.querySelector('[type="submit"]');
+    if (submit.disabled) return;
+    submit.disabled = true;
+    try { await action(); }
+    catch (error) { message.textContent = error.message; }
+    finally { submit.disabled = false; }
+  };
+}
+register(emailForm, async () => {
+  await api("/api/auth/code", { method: "POST", body: { email: email.value } });
+  emailForm.hidden = true;
+  codeForm.hidden = false;
+  message.textContent = "If this email has access, a code will arrive shortly.";
+  code.focus();
+});
+register(codeForm, async () => {
+  await api("/api/auth/verify", { method: "POST", body: { email: email.value, code: code.value } });
+  let target = "/start";
+  try {
+    const url = new URL(new URLSearchParams(location.search).get("next") || target, location.origin);
+    if (url.origin === location.origin && ["/start", "/review"].includes(url.pathname)) {
+      target = url.pathname + url.search;
+    }
+  } catch {}
+  location.replace(target);
+});
+byId("changeEmail").onclick = () => {
+  code.value = ""; message.textContent = ""; codeForm.hidden = true; emailForm.hidden = false; email.focus();
+};
+</script>
+</body>
+</html>
