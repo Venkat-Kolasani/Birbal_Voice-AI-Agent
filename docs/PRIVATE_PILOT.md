@@ -1,6 +1,6 @@
 # Private typing pilot
 
-The owner signs in with a one-time work-email code and sees only their interviews. A successful typed turn is saved to Supabase Postgres before Birbal acknowledges it. The Talker and asynchronous Scribe are unchanged. The pilot does not open voice calls or publish links, board entries, GitHub issues, or brief files on the server. Approving still lets the owner download the redacted versions.
+The owner signs in with a one-time work-email code and sees only their interviews. A successful typed turn is saved to Supabase Postgres before Birbal shows the reply. The pilot does not open voice calls or publish links, board entries, GitHub issues, or brief files on the server. Approving lets the owner download the redacted versions; the raw owner brief stays view-only in the app.
 
 ## Configure a separate deployment
 
@@ -21,6 +21,6 @@ The owner signs in with a one-time work-email code and sees only their interview
 
 ## Operational limits
 
-- Writes do not fall back to local files. If the database becomes unavailable after a reply, keep the interview open: Birbal clearly marks the pending save and retries it. Memory-only data is not guaranteed to survive a crash. Scribe results are saved asynchronously.
+- Writes do not fall back to local files. If the database becomes unavailable before committing a reply, keep the interview open: Birbal marks the pending save and retries it. Graceful shutdown makes a bounded attempt to save completed Scribe notes. Memory-only data is not guaranteed to survive a crash.
 - A signed token remains valid until it expires. For urgent offboarding, remove access at the network perimeter or take the pilot offline while sessions expire; deleting a Supabase account also removes its persisted interviews. Add centrally enforced revocation and retention controls before a broader rollout.
 - Use a separate Supabase project and host for the pilot. If you need to roll back, take the pilot offline or return to a known private build. Never switch its host to demo mode as a rollback.

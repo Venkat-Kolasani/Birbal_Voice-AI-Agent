@@ -68,6 +68,8 @@ async def private_pilot(request: Request, call_next):
     path = request.url.path
     if path.startswith(("/api/shared/", "/b/")) or path in {"/board", "/api/board"}:
         return JSONResponse({"detail": "Sharing is disabled in the private pilot."}, status_code=404)
+    if path.startswith("/static/") and path not in {"/static/app.css", "/static/common.js", "/static/voice.js"}:
+        return JSONResponse({"detail": "Not found."}, status_code=404)
     api_request = path.startswith("/api/")
     if api_request and request.method not in {"GET", "HEAD"} and request.headers.get("origin") != auth.origin:
         return JSONResponse({"detail": "This request must come from Birbal."}, status_code=403)
@@ -145,7 +147,7 @@ def _cancel(sid: str) -> None:
 
 @app.get("/")
 def landing():
-    return FileResponse(WEB / "landing.html")
+    return RedirectResponse("/start") if auth else FileResponse(WEB / "landing.html")
 
 
 class SignInEmail(BaseModel):

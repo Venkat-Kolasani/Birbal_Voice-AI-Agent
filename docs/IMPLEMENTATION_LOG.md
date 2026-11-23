@@ -116,3 +116,8 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 - `server/brain/auth.py`, `server/api.py`, and the login/start/review pages: require a verified work-email account; restrict interview, review, and export to the owner. Voice, public share links, board posting, and GitHub posting are off in the pilot.
 - `server/brain/cloud.py`, `server/brain/session.py`, and the Supabase migration: store private interviews under the account ID; acknowledge a typed answer only after Postgres commits. Retry failed saves in the background without prompting the owner to re-enter the answer.
 - Verified: `uv run --frozen pytest -q` (63 passed with Supabase HTTP doubles); migration, upsert, grants, and account-delete behavior checked on local PostgreSQL 14. Next: live Supabase sign-in/SMTP, provider data handling, and retention before a company-data pilot.
+
+## 2026-11-23 23:11 IST — Private pilot review fixes
+- Keep the raw brief view-only, gate redacted downloads, and route the pilot directly to protected interviews.
+- Show the previous transcript until the typed turn commits. Drain late Scribe notes on orderly shutdown and resume the elapsed clock when the owner reopens the interview.
+- Verified: `uv run --frozen pytest -q` (66 passed), browser JavaScript syntax, and `git diff --check`. Hosted email delivery remains unverified.

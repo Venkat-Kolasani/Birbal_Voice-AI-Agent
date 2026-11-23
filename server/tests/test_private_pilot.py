@@ -100,6 +100,8 @@ def test_pilot_mode_fails_closed_when_incomplete(monkeypatch):
 def test_login_sets_protected_cookie_and_logout_clears_it(pilot):
     client = pilot.client()
     assert client.get("/api/sessions").status_code == 401
+    root = client.get("/", follow_redirects=False)
+    assert root.status_code == 307 and root.headers["location"] == "/start"
     redirect = client.get("/start?s=fixture", follow_redirects=False)
     assert redirect.headers["location"] == "/login?next=%2Fstart%3Fs%3Dfixture"
     data = {"email": "fixture@example.test"}
@@ -133,7 +135,8 @@ def test_pilot_blocks_cross_origin_and_external_publication(pilot, monkeypatch, 
 
     monkeypatch.setattr(api, "open_github_issue", unexpected)
     assert client.post("/api/start", headers={"Origin": "https://other.example.test"}).status_code == 403
-    for path in ("/api/board", "/api/shared/old-token", "/b/old-token", "/board"):
+    for path in ("/api/board", "/api/shared/old-token", "/b/old-token", "/board",
+                 "/static/board.html", "/static/landing.html"):
         assert client.get(path).status_code == 404
     assert client.post("/api/offer", json={}).status_code == 404
     assert client.post("/api/start?mode=voice").status_code == 404
