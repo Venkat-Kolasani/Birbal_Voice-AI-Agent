@@ -89,18 +89,32 @@ class PilotStore:
             session.save_failed = False
             session.pre_turn_state = None
 
-    async def autosave(self, every: float = 5.0) -> None:
-        while True:
-            await asyncio.sleep(every)
-            await self.flush_dirty()
+    async def autosave(self, *, stop: asyncio.Event, every: float = 5.0) -> None:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=every)
+            except TimeoutError:
+                await self.flush_dirty(stop=stop)
 
-    async def flush_dirty(self) -> None:
+    async def flush_dirty(self, *, stop: asyncio.Event | None = None) -> None:
         for session in list(self.live.values()):
+            if stop and stop.is_set():
+                break
             if session.dirty and session.status != "thinking":
                 try:
                     await self.persist(session)
                 except PilotStorageError:
                     pass
+
+    async def drain(self) -> None:
+        await asyncio.gather(*(session.settle(timeout=3) for session in self.live.values()))
+        try:
+            async with asyncio.timeout(10):
+                await self.flush_dirty()
+        except TimeoutError:
+            log.warning("Private pilot shutdown reached the save deadline.")
+        if any(session.dirty for session in self.live.values()):
+            log.warning("Private pilot shutdown left unsaved changes.")
 
 
 class SupabaseStore(SessionStore):

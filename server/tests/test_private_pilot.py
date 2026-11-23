@@ -16,7 +16,7 @@ import api
 from brain import llm, scribe
 from brain.auth import COOKIE, SupabaseAuth, configured_auth
 from brain.cloud import PilotStore
-from brain.schema import ScribeOutput
+from brain.schema import ScribeOutput, Unknown
 
 ORIGIN = "https://birbal.example.test"
 SUPABASE = "https://project.example.test"
@@ -218,3 +218,19 @@ def test_poll_shows_only_committed_turns_during_save(pilot):
         assert result.result(timeout=3).status_code == 200
     state = client.get(state_path).json()
     assert not state["save_pending"] and len(state["transcript"]) == len(committed) + 2
+
+
+def test_lifespan_saves_notes_after_last_turn(pilot, monkeypatch):
+    ready = Event()
+
+    async def late_notes(*args):
+        assert await asyncio.to_thread(ready.wait, 3)
+        return ScribeOutput(unknowns=[Unknown(dimension="impact", question="How long?", lead="The team")])
+
+    monkeypatch.setattr(scribe, "run", late_notes)
+    with pilot.client(ALICE) as client:
+        sid = client.post("/api/start").json()["id"]
+        assert client.post(f"/api/turn?s={sid}", json={"text": "The form loses a field."}).status_code == 200
+        assert not pilot.remote.rows[(ALICE, sid)]["data"]["ledger"]["unknowns"]
+        ready.set()
+    assert pilot.remote.rows[(ALICE, sid)]["data"]["ledger"]["unknowns"][0]["question"] == "How long?"

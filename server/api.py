@@ -41,12 +41,20 @@ if auth:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    autosave = asyncio.create_task(store.autosave())
+    active_store = store
+    stop_autosave = asyncio.Event()
+    is_pilot = isinstance(active_store, PilotStore)
+    autosave = asyncio.create_task(active_store.autosave(stop=stop_autosave) if is_pilot else active_store.autosave())
     try:
         yield
     finally:
-        autosave.cancel()
-        await asyncio.gather(autosave, return_exceptions=True)
+        if is_pilot:
+            stop_autosave.set()
+            await autosave
+            await active_store.drain()
+        else:
+            autosave.cancel()
+            await asyncio.gather(autosave, return_exceptions=True)
 
 
 app = FastAPI(title="Birbal", lifespan=lifespan)
