@@ -185,7 +185,9 @@ def auth_logout(response: Response):
 
 @app.get("/api/auth/status")
 def auth_status():
-    return {"private": auth is not None}
+    if auth is None:
+        return {"private": False}
+    return {"private": True, "interview_providers": llm.provider_labels()}
 
 
 @app.get("/start")
