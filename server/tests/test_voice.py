@@ -251,7 +251,9 @@ def test_worker_timeout_or_failure_routes_to_text(voice, monkeypatch, caplog, fa
 
 
 @pytest.mark.parametrize("audio_starts", [False, True])
-def test_opening_audio_deadline(monkeypatch, audio_starts):
+@pytest.mark.parametrize("resuming_intro", [False, True])
+def test_opening_audio_deadline(monkeypatch, audio_starts, resuming_intro):
+    spoken = []
     class Events:
         def __init__(self):
             self.events = {}
@@ -271,6 +273,7 @@ def test_opening_audio_deadline(monkeypatch, audio_starts):
 
     class Worker(Events):
         async def queue_frames(self, frames):
+            spoken.extend(frame.text for frame in frames)
             if audio_starts:
                 status_tap.clear_reply_timeout()
 
@@ -300,5 +303,11 @@ def test_opening_audio_deadline(monkeypatch, audio_starts):
         monkeypatch.setattr(bot, name, lambda lang: None)
     session = api.Session()
     session.start(mode="voice")
+    if resuming_intro:
+        session.add_birbal(bot.OPENING_LINE)
     asyncio.run(bot.run_bot(None, session))
     assert session.status == ("listening" if audio_starts else "error")
+    if resuming_intro:
+        assert spoken == [f"I'm back. {bot.OPENING_LINE}"]
+        session.add_birbal(spoken[0])
+        assert [turn.text for turn in session.ledger.transcript] == [bot.OPENING_LINE]

@@ -228,7 +228,7 @@ async def run_bot(connection, session: Session) -> None:
     while history and history[0]["role"] != "user":
         history = history[1:]
     context = LLMContext(messages=history or None)
-    resuming = any(t.role == "owner" for t in session.ledger.transcript)
+    resuming = bool(session.ledger.transcript)
     # Turn-taking: Pipecat's default stop strategy is the bundled smart-turn model (judges whether the sentence is
     # finished), so VAD only needs a short pause (Pipecat default 0.2 s; we use 0.4 s for people who pause to think).
     # Barge-in needs a few real words, so venue noise or a cough doesn't cut Birbal off.

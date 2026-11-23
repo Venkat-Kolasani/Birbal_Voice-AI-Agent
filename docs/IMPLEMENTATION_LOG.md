@@ -126,3 +126,4 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 ## 2026-11-23 23:13 IST — Voice review fixes
 - `server/api.py`, `web/voice.js`, and `web/index.html`: allow a quick voice resume to wait for peer teardown and preserve mute before negotiation. Mark the old browser-client decision superseded.
 - Verified: `pytest -q` (61 passed) and `node --test scripts/voice.test.cjs` (7 passed). Authenticated admission and per-user quotas still gate a public rollout.
+- Chrome with synthetic speech confirmed mute stayed on at negotiation checkpoints. A resume before the first answer now repeats the question as a resume prompt rather than appending a second opening. This and the queued-resume cancellation are covered by 64 Python tests.
