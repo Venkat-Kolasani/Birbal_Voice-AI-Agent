@@ -34,11 +34,13 @@ _replays: dict[str, asyncio.Task] = {}
 _webrtc = None
 VOICE_MAX_CONCURRENT = int(os.getenv("VOICE_MAX_CONCURRENT", "4"))
 VOICE_MAX_SECONDS = float(os.getenv("VOICE_MAX_SECONDS", "900"))
+VOICE_HANDOFF_SECONDS = 6
 
 
 @dataclass
 class VoiceRun:
     stop: asyncio.Event = field(default_factory=asyncio.Event)
+    released: asyncio.Event = field(default_factory=asyncio.Event)
     task: asyncio.Task | None = None
     peer_id: str | None = None
 
@@ -92,6 +94,12 @@ def _get(s: str) -> Session:
 def _stop_voice(sid: str) -> None:
     if run := _voice_runs.get(sid):
         run.stop.set()
+
+
+def _release_voice(sid: str, run: VoiceRun) -> None:
+    if _voice_runs.get(sid) is run:
+        _voice_runs.pop(sid)
+    run.released.set()
 
 
 @app.get("/")
@@ -362,7 +370,7 @@ async def _run_voice(connection, sess: Session, run: VoiceRun) -> None:
                 sess.status = "error"
                 sess.last_error = ("Voice reached its time limit." if outcome == "time_limit"
                                    else "Voice disconnected.")
-        _voice_runs.pop(sess.id, None)
+        _release_voice(sess.id, run)
         log.info("Voice session closed: outcome=%s duration_ms=%d", outcome, (time.monotonic() - started) * 1000)
 
 
@@ -410,6 +418,12 @@ async def offer(body: VoiceOffer):
     import bot
     from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequest
     sess = _get(body.request_data.session)
+    existing = _voice_runs.get(sess.id)
+    if existing and existing.stop.is_set() and not body.pc_id and not sess.ended:
+        try:
+            await asyncio.wait_for(existing.released.wait(), timeout=VOICE_HANDOFF_SECONDS)
+        except TimeoutError:
+            raise HTTPException(409, "The previous voice call is still closing. Try again shortly.") from None
     if sess.ended or sess.mode == "demo" or (sess.status == "thinking" and sess.mode == "text"):
         raise HTTPException(409, "This interview cannot connect to voice right now.")
     ok, why = bot.voice_ready(sess.lang)
@@ -453,7 +467,7 @@ async def offer(body: VoiceOffer):
             if run.task:
                 run.stop.set()
             else:
-                _voice_runs.pop(sess.id, None)
+                _release_voice(sess.id, run)
         raise
 
 

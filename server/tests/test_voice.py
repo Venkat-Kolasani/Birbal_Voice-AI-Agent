@@ -111,6 +111,38 @@ def test_switching_during_pending_offer_does_not_restart_voice(voice):
     asyncio.run(check())
 
 
+def test_immediate_resume_waits_for_previous_peer_cleanup(voice, monkeypatch):
+    monkeypatch.setattr(api, "VOICE_MAX_CONCURRENT", 1)
+
+    async def check():
+        async with client() as c:
+            sid = await start(c)
+            assert (await offer(c, sid)).status_code == 200
+            old = api._voice_runs[sid]
+            closing, finish = asyncio.Event(), asyncio.Event()
+            disconnect = voice.peers[0].disconnect
+
+            async def delayed_disconnect():
+                closing.set()
+                await finish.wait()
+                await disconnect()
+
+            voice.peers[0].disconnect = delayed_disconnect
+            assert (await c.post(f"/api/mode?s={sid}&mode=text")).status_code == 200
+            await asyncio.wait_for(closing.wait(), 1)
+            resume = asyncio.create_task(offer(c, sid))
+            await asyncio.sleep(0)
+            assert not resume.done() and len(voice.peers) == 1
+            finish.set()
+            assert (await asyncio.wait_for(resume, 1)).status_code == 200
+            assert voice.peers[0].closed and api._voice_runs[sid] is not old
+            new = api._voice_runs[sid]
+            await c.post(f"/api/end?s={sid}")
+            await asyncio.wait_for(new.task, 1)
+
+    asyncio.run(check())
+
+
 def test_offer_validation_and_failed_restart_release_the_peer(voice):
     async def check():
         async with client() as c:
