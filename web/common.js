@@ -40,8 +40,26 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined });
   let data = null;
   try { data = await r.json(); } catch (e) {}
-  if (!r.ok) throw new Error((data && data.detail) || `Request failed (${r.status})`);
+  if (!r.ok) {
+    if (r.status === 401 && ["/start", "/review"].includes(location.pathname)) {
+      location.replace("/login?next=" + encodeURIComponent(location.pathname + location.search));
+    }
+    const error = new Error(typeof data?.detail === "string" ? data.detail : `Request failed (${r.status})`);
+    throw error;
+  }
   return data;
+}
+
+async function setupPilot(onPrivate = () => {}) {
+  const status = await api("/api/auth/status");
+  if (!status.private) return;
+  const signOut = document.getElementById("signOut");
+  signOut.hidden = false;
+  signOut.onclick = async () => {
+    try { await api("/api/auth/logout", { method: "POST" }); location.replace("/login"); }
+    catch (error) { toast(error.message); }
+  };
+  onPrivate();
 }
 
 function toast(msg) {

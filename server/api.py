@@ -6,18 +6,22 @@ import os
 import time
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
-from fastapi.responses import FileResponse, PlainTextResponse  # noqa: E402
+import jwt  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request, Response  # noqa: E402
+from fastapi.concurrency import run_in_threadpool  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
-from pydantic import BaseModel  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
 from brain import keys, llm  # noqa: E402
+from brain.auth import COOKIE, configured_auth  # noqa: E402
 from brain.prompts import OPENING_LINE, OPENING_LINES, TALKER_SYSTEM, talker_messages  # noqa: E402
 from brain.cloud import make_store, open_github_issue  # noqa: E402
 from brain.session import Session, SessionStore  # noqa: E402
@@ -28,12 +32,44 @@ WEB = ROOT / "web"
 EXPORTS = Path(os.getenv("BIRBAL_EXPORTS", ROOT / "exports"))
 
 app = FastAPI(title="Birbal")
+auth = configured_auth()
+
+
+@app.middleware("http")
+async def private_pilot(request: Request, call_next):
+    request.state.owner = None
+    if auth is None:
+        return await call_next(request)
+    path = request.url.path
+    if path.startswith(("/api/shared/", "/b/")) or path in {"/board", "/api/board"}:
+        return JSONResponse({"detail": "Sharing is disabled in the private pilot."}, status_code=404)
+    api_request = path.startswith("/api/")
+    if api_request and request.method not in {"GET", "HEAD"} and request.headers.get("origin") != auth.origin:
+        return JSONResponse({"detail": "This request must come from Birbal."}, status_code=403)
+    public = {"/api/health", "/api/auth/code", "/api/auth/verify", "/api/auth/logout"}
+    if path in {"/start", "/review"} or (api_request and path not in public):
+        try:
+            request.state.owner, _ = await run_in_threadpool(auth.verify, request.cookies.get(COOKIE, ""))
+        except jwt.PyJWTError:
+            if api_request:
+                return JSONResponse({"detail": "Sign in to continue."}, status_code=401,
+                                    headers={"Cache-Control": "no-store"})
+            query = urlencode({"next": path + ("?" + request.url.query if request.url.query else "")})
+            return RedirectResponse("/login?" + query, headers={"Cache-Control": "no-store"})
+    if path == "/api/offer":
+        return JSONResponse({"detail": "Voice is disabled in the private pilot."}, status_code=404)
+    response = await call_next(request)
+    if api_request or path in {"/start", "/review", "/login"}:
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "same-origin"
+    return response
 
 
 @app.on_event("startup")
 async def _autosave():
     asyncio.create_task(store.autosave())
-store = make_store(Path(os.getenv("BIRBAL_DATA", ROOT / "data" / "sessions")))
+DATA = Path(os.getenv("BIRBAL_DATA", ROOT / "data" / "sessions"))
+store = SessionStore(DATA) if auth else make_store(DATA)
 _tasks: dict[str, asyncio.Task] = {}  # replay / voice task per session
 
 Audience = Literal["me", "builders", "everyone"]
@@ -53,9 +89,9 @@ class EditIn(BaseModel):
     problem: str
 
 
-def _get(s: str) -> Session:
+def _get(s: str, request: Request) -> Session:
     sess = store.get(s)
-    if sess is None:
+    if sess is None or sess.owner_id != request.state.owner:
         raise HTTPException(404, "Interview not found. Start a new one.")
     return sess
 
@@ -69,6 +105,44 @@ def _cancel(sid: str) -> None:
 @app.get("/")
 def landing():
     return FileResponse(WEB / "landing.html")
+
+
+class SignInEmail(BaseModel):
+    email: str = Field(min_length=3, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+class SignInCode(SignInEmail):
+    code: str = Field(pattern=r"^[0-9]{6,10}$")
+
+
+@app.get("/login")
+def login():
+    return FileResponse(WEB / "login.html") if auth else RedirectResponse("/start")
+
+
+@app.post("/api/auth/code", status_code=204)
+def auth_code(body: SignInEmail):
+    if auth is None:
+        raise HTTPException(404)
+    auth.send_code(body.email.strip().lower())
+
+
+@app.post("/api/auth/verify", status_code=204)
+def auth_verify(body: SignInCode, response: Response):
+    if auth is None:
+        raise HTTPException(404)
+    token, lifetime = auth.exchange(body.email.strip().lower(), body.code)
+    response.set_cookie(COOKIE, token, max_age=lifetime, httponly=True, secure=auth.secure, samesite="lax")
+
+
+@app.post("/api/auth/logout", status_code=204)
+def auth_logout(response: Response):
+    response.delete_cookie(COOKIE, httponly=True, secure=bool(auth and auth.secure), samesite="lax")
+
+
+@app.get("/api/auth/status")
+def auth_status():
+    return {"private": auth is not None}
 
 
 @app.get("/start")
@@ -115,6 +189,9 @@ async def shared(token: str):
 
 @app.get("/api/health")
 def health():
+    if auth:
+        return {"llm": llm.available(), "voice": False, "why": "Start by typing in the private pilot.",
+                "model": "private pilot"}
     import bot
     voice, why = bot.voice_ready()
     return {"llm": llm.available(), "voice": voice, "why": why,
@@ -124,16 +201,18 @@ def health():
 
 
 @app.get("/api/sessions")
-def sessions():
-    return store.list()
+def sessions(request: Request):
+    return store.list() if request.state.owner is None else []
 
 
 Lang = Literal["auto", "en", "hi", "kn"]
 
 
 @app.post("/api/start")
-async def start(mode: Literal["text", "voice", "demo"] = "text", lang: Lang = "auto"):
-    sess = store.create()
+async def start(request: Request, mode: Literal["text", "voice", "demo"] = "text", lang: Lang = "auto"):
+    if auth and mode != "text":
+        raise HTTPException(404, "Only typing is enabled in the private pilot.")
+    sess = store.create(request.state.owner)
     sess.start(mode, lang)
     if mode == "text":  # in voice mode the bot speaks the opening and records it itself
         sess.add_birbal(OPENING_LINES.get(lang, OPENING_LINE))
@@ -149,14 +228,16 @@ async def _replay(sess: Session, pace: float = 1.0):
 
 
 @app.get("/api/state")
-def state(s: str):
-    return _get(s).state()
+def state(s: str, request: Request):
+    return _get(s, request).state()
 
 
 @app.post("/api/mode")
-async def switch_mode(s: str, mode: Literal["text", "voice"]):
+async def switch_mode(s: str, mode: Literal["text", "voice"], request: Request):
     """Switch mid-interview (e.g. mic fails -> keep going by typing). Same session, same transcript."""
-    sess = _get(s)  # the browser's pc.close() already stops the voice pipeline cleanly
+    sess = _get(s, request)  # the browser's pc.close() already stops the voice pipeline cleanly
+    if auth and mode != "text":
+        raise HTTPException(404, "Voice is disabled in the private pilot.")
     sess.mode = mode
     if sess.status == "error":
         sess.status, sess.last_error = "listening", ""
@@ -164,9 +245,9 @@ async def switch_mode(s: str, mode: Literal["text", "voice"]):
 
 
 @app.post("/api/turn")
-async def turn(s: str, t: TurnIn):
+async def turn(s: str, t: TurnIn, request: Request):
     """Text mode: owner types, Birbal replies."""
-    sess = _get(s)
+    sess = _get(s, request)
     if not llm.available():
         raise HTTPException(503, "No LLM key configured. Add GOOGLE_API_KEY or GROQ_API_KEY to .env.")
     if sess.ended:
@@ -185,8 +266,8 @@ async def turn(s: str, t: TurnIn):
 
 
 @app.post("/api/end")
-async def end(s: str):
-    sess = _get(s)
+async def end(s: str, request: Request):
+    sess = _get(s, request)
     _cancel(s)
     sess.finish()
     await sess.settle()
@@ -203,15 +284,15 @@ def _version_json(v) -> dict:
 
 async def _brief(sess: Session) -> dict:
     vs = await sess.brief()
-    return {"id": sess.id, "share": f"/b/{sess.share_token}" if sess.share_token else None,
+    return {"id": sess.id, "share": f"/b/{sess.share_token}" if sess.share_token and not auth else None,
             "versions": {a: _version_json(v) for a, v in vs.items()},
             "private": [x.model_dump() for x in sess.ledger.sensitive],
             "approved": sess.approved, "created": sess.created, "elapsed": round(sess.minutes() * 60)}
 
 
 @app.get("/api/brief")
-async def brief(s: str):
-    sess = _get(s)
+async def brief(s: str, request: Request):
+    sess = _get(s, request)
     out = await _brief(sess)
     if sess.ended:
         store.save(sess)  # persist LLM extras once computed
@@ -219,10 +300,10 @@ async def brief(s: str):
 
 
 @app.post("/api/choice")
-async def choice(s: str, c: ChoiceIn):
-    sess = _get(s)
+async def choice(s: str, c: ChoiceIn, request: Request):
+    sess = _get(s, request)
     sess.set_choice(c.span, c.choice)
-    if sess.approved and hasattr(store, "unpost_board"):
+    if not auth and sess.approved and hasattr(store, "unpost_board"):
         store.unpost_board(sess)  # a changed brief leaves the board until re-approved
     sess.approved = None
     store.save(sess)
@@ -230,8 +311,8 @@ async def choice(s: str, c: ChoiceIn):
 
 
 @app.post("/api/edit")
-async def edit(s: str, e: EditIn):
-    sess = _get(s)
+async def edit(s: str, e: EditIn, request: Request):
+    sess = _get(s, request)
     if e.problem.strip():
         sess.overrides[e.audience] = e.problem.strip()
     else:  # empty = restore the generated statement
@@ -241,14 +322,17 @@ async def edit(s: str, e: EditIn):
 
 
 @app.post("/api/approve")
-async def approve(s: str):
-    sess = _get(s)
+async def approve(s: str, request: Request):
+    sess = _get(s, request)
     vs = await sess.brief()
     leaking = [a for a, v in vs.items() if a != "me" and not v.safe]
     if leaking:  # enforced server-side, not just by the disabled button
         raise HTTPException(409, f"Secret found in: {', '.join(leaking)}. Fix it before approving.")
     sess.approved = {"at": time.strftime("%Y-%m-%d %H:%M:%S"),
                      "private": {x.span: x.choice or "generalise" for x in sess.ledger.sensitive}}
+    if auth:
+        store.save(sess)
+        return await _brief(sess)
     store.mint_share(sess)
     EXPORTS.mkdir(exist_ok=True)
     for a, v in vs.items():
@@ -265,8 +349,8 @@ async def approve(s: str):
 
 
 @app.get("/api/export/{audience}.{fmt}")
-async def export(s: str, audience: Audience, fmt: Literal["md", "json"]):
-    sess = _get(s)
+async def export(s: str, audience: Audience, fmt: Literal["md", "json"], request: Request):
+    sess = _get(s, request)
     if audience != "me" and not sess.approved:
         raise HTTPException(403, "Approve the brief before exporting shareable versions.")
     v = (await sess.brief())[audience]
@@ -302,17 +386,19 @@ def _handler():
 
 @app.get("/api/voice")
 def voice_status(lang: Lang = "auto"):
+    if auth:
+        return {"ready": False, "why": "Voice is disabled in the private pilot.", "ice": []}
     import bot
     ok, why = bot.voice_ready(lang)
     return {"ready": ok, "why": why, "ice": _ice_servers()}
 
 
 @app.post("/api/offer")
-async def offer(body: dict):
+async def offer(body: dict, request: Request):
     import bot
     from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequest
     data = body.get("request_data") or {}
-    sess = _get(str(data.get("session", "")))
+    sess = _get(str(data.get("session", "")), request)
     ok, why = bot.voice_ready(sess.lang)
     if not ok:
         raise HTTPException(503, why)

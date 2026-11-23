@@ -20,6 +20,7 @@
   <button class="btn ghost" id="mute" hidden title="Mute (M)"></button>
   <button class="btn" id="end" hidden title="End & review (E)">End &amp; review <kbd>E</kbd></button>
   <button class="btn ghost" id="theme"></button>
+  <button class="btn ghost" id="signOut" hidden>Sign out</button>
 </div>
 
 <main id="startView" class="start">
@@ -84,6 +85,12 @@
 <script>
 initTheme();
 const $ = (id) => document.getElementById(id);
+setupPilot(() => {
+  $("startDemo").hidden = true;
+  $("startVoice").hidden = true;
+  $("startText").textContent = "Start interview";
+  $("m1").textContent = "Only you can open your interviews.";
+}).catch(() => {});
 const demo = new URLSearchParams(location.search).has("demo");
 $("startVoice").innerHTML = icon("mic") + "Start interview";
 $("startText").innerHTML = icon("keyboard") + "Type instead";

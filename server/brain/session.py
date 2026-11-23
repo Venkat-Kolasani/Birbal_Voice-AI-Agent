@@ -20,8 +20,9 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
 class Session:
-    def __init__(self, sid: Optional[str] = None) -> None:
+    def __init__(self, sid: Optional[str] = None, owner_id: str | None = None) -> None:
         self.id = sid or uuid.uuid4().hex[:10]
+        self.owner_id = owner_id
         self.created = datetime.now().isoformat(timespec="seconds")
         self.mode = "text"
         self.lang = "auto"
@@ -46,7 +47,7 @@ class Session:
 
     # --- timeline ---------------------------------------------------------
     def start(self, mode: str = "text", lang: str = "auto") -> None:
-        self.__init__(self.id)
+        self.__init__(self.id, self.owner_id)
         self.mode, self.lang = mode, lang
         self.started = time.monotonic()
         self.status = "listening"
@@ -186,14 +187,14 @@ class Session:
 
     # --- persistence ------------------------------------------------------
     def to_dict(self) -> dict:
-        return {"id": self.id, "created": self.created, "mode": self.mode, "lang": self.lang, "elapsed_s": round(self.minutes() * 60),
+        return {"id": self.id, "owner_id": self.owner_id, "created": self.created, "mode": self.mode, "lang": self.lang, "elapsed_s": round(self.minutes() * 60),
                 "ended": self.ended, "approved": self.approved, "overrides": self.overrides, "extras": self.extras,
                 "owner_turns": self._owner_turns, "share_token": self.share_token,
                 "ledger": self.ledger.model_dump()}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Session":
-        s = cls(d["id"])
+        s = cls(d["id"], d.get("owner_id"))
         s.created, s.mode, s.approved = d["created"], d.get("mode", "text"), d.get("approved")
         s.lang = d.get("lang", "auto")
         s.share_token = d.get("share_token")
@@ -245,8 +246,8 @@ class SessionStore:
         self.root = root
         self.live: dict[str, Session] = {}
 
-    def create(self) -> Session:
-        s = Session()
+    def create(self, owner_id: str | None = None) -> Session:
+        s = Session(uuid.uuid4().hex if owner_id else None, owner_id)
         self.live[s.id] = s
         return s
 

@@ -21,6 +21,7 @@
   <button class="btn" id="share" hidden title="Copy the read-only link to the approved builder brief"></button>
   <button class="btn primary" id="approve"></button>
   <button class="btn ghost" id="theme"></button>
+  <button class="btn ghost" id="signOut" hidden>Sign out</button>
 </div>
 
 <main class="review">
@@ -47,7 +48,7 @@
 </main>
 
 <dialog id="confirm">
-  <div class="dh">Share this brief?</div>
+  <div class="dh" id="confirmTitle">Share this brief?</div>
   <div class="db" id="confirmBody"></div>
   <div class="df"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="doApprove">Approve and share</button></div>
 </dialog>
@@ -56,6 +57,12 @@
 <script>
 initTheme();
 const $ = (id) => document.getElementById(id);
+let privatePilot = false;
+setupPilot(() => {
+  privatePilot = true;
+  $("confirmTitle").textContent = "Approve this brief for download?";
+  $("doApprove").textContent = "Approve";
+}).catch(() => {});
 const sid = new URLSearchParams(location.search).get("s");
 const token = location.pathname.startsWith("/b/") ? location.pathname.slice(3) : null;  // read-only shared view
 if (!sid && !token) location.href = "/start";
@@ -184,7 +191,9 @@ document.addEventListener("click", closeMenu);
 $("approve").onclick = () => {
   const n = data.private.length;
   const hidden = data.private.filter((p) => p.choice !== "keep").length;
-  $("confirmBody").textContent = `Builders and the public will see the redacted versions. ${hidden} of ${n} private item${n === 1 ? "" : "s"} ${hidden === 1 ? "is" : "are"} hidden or removed. The owner version stays with you.`;
+  $("confirmBody").textContent = privatePilot
+    ? "Approving makes the redacted versions available for you to download. Nothing is posted or shared."
+    : `Builders and the public will see the redacted versions. ${hidden} of ${n} private item${n === 1 ? "" : "s"} ${hidden === 1 ? "is" : "are"} hidden or removed. The owner version stays with you.`;
   $("confirm").showModal();
 };
 $("cancel").onclick = () => $("confirm").close();
