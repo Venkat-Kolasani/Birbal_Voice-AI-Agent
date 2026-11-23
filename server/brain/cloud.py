@@ -51,8 +51,9 @@ class PilotStore:
             raise PilotStorageError from exc
 
     @staticmethod
-    def _restore(row: dict) -> Session:
-        return Session.from_dict({**row["data"], "id": row["id"], "owner_id": row["owner_id"]})
+    def _restore(row: dict, *, resume_clock: bool = False) -> Session:
+        return Session.from_dict({**row["data"], "id": row["id"], "owner_id": row["owner_id"]},
+                                 resume_clock=resume_clock)
 
     def get_owned(self, sid: str, owner: str) -> Session | None:
         if len(sid) != 32 or any(ch not in "0123456789abcdef" for ch in sid):
@@ -63,7 +64,7 @@ class PilotStore:
                                          "select": "id,owner_id,data"})
         if not rows or rows[0]["owner_id"] != owner or rows[0]["id"] != sid:
             return None
-        return self.live.setdefault(sid, self._restore(rows[0]))
+        return self.live.setdefault(sid, self._restore(rows[0], resume_clock=True))
 
     def list_owned(self, owner: str, limit: int = 8) -> list[dict]:
         rows = self._rows("GET", params={"owner_id": f"eq.{owner}", "select": "id,owner_id,data",

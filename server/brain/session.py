@@ -196,7 +196,7 @@ class Session:
                 "ledger": self.ledger.model_dump()}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Session":
+    def from_dict(cls, d: dict, *, resume_clock: bool = False) -> "Session":
         s = cls(d["id"], d.get("owner_id"))
         s.created, s.mode, s.approved = d["created"], d.get("mode", "text"), d.get("approved")
         s.lang = d.get("lang", "auto")
@@ -209,6 +209,8 @@ class Session:
             s.status, s.ended = "ended", True
         elif s.ledger.transcript:
             s.status = "listening"  # in-progress interview restored after a restart
+            if resume_clock:
+                s.started = time.monotonic()
         return s
 
     def summary(self) -> dict:

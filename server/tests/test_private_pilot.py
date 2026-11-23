@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 
 import api
-from brain import llm, scribe
+from brain import llm, scribe, session
 from brain.auth import COOKIE, SupabaseAuth, configured_auth
 from brain.cloud import PilotStore
 from brain.schema import ScribeOutput, Unknown
@@ -234,3 +234,19 @@ def test_lifespan_saves_notes_after_last_turn(pilot, monkeypatch):
         assert not pilot.remote.rows[(ALICE, sid)]["data"]["ledger"]["unknowns"]
         ready.set()
     assert pilot.remote.rows[(ALICE, sid)]["data"]["ledger"]["unknowns"][0]["question"] == "How long?"
+
+
+def test_resume_continues_pilot_clock_until_end(pilot, monkeypatch):
+    client = pilot.client(ALICE)
+    sid = client.post("/api/start").json()["id"]
+    pilot.remote.rows[(ALICE, sid)]["data"]["elapsed_s"] = 470
+    monkeypatch.setattr(api, "store", PilotStore(SUPABASE, "sb_secret_fixture"))
+    clock = SimpleNamespace(now=1000)
+    monkeypatch.setattr(session, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    path = f"/api/state?s={sid}"
+    assert client.get(path).json()["elapsed"] == 470
+    clock.now += 11
+    assert client.get(path).json()["ready_for_readback"]
+    assert client.post(f"/api/end?s={sid}").status_code == 200
+    clock.now += 15
+    assert client.get(path).json()["elapsed"] == 481
