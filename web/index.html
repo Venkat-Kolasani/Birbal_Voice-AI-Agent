@@ -92,6 +92,7 @@ const pilotSetup = setupPilot(() => {
   $("startVoice").hidden = true;
   $("startText").textContent = "Start interview";
   $("m1").textContent = "Only you can open your interviews.";
+  $("m3").textContent = "Birbal sends answers to its configured AI providers to run the interview and write the brief.";
   $("recentLabel").textContent = "Your recent interviews";
 }).catch(() => {});
 const demo = new URLSearchParams(location.search).has("demo");

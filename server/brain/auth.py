@@ -54,8 +54,6 @@ class SupabaseAuth:
             raise HTTPException(503, "Sign-in is temporarily unavailable.") from exc
         if response.status_code >= 500:
             raise HTTPException(503, "Sign-in is temporarily unavailable.")
-        if response.status_code == 429:
-            raise HTTPException(429, "Too many sign-in attempts. Wait before trying again.")
         return response
 
     def send_code(self, email: str) -> None:
@@ -64,6 +62,8 @@ class SupabaseAuth:
 
     def exchange(self, email: str, code: str) -> tuple[str, int]:
         response = self._post("/verify", {"email": email, "token": code, "type": "email"})
+        if response.status_code == 429:
+            raise HTTPException(429, "Too many sign-in attempts. Wait before trying again.")
         if not response.is_success:
             raise HTTPException(401, "That code is incorrect or expired.")
         try:

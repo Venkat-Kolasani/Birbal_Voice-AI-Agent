@@ -7,6 +7,7 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import httpx
 
@@ -19,7 +20,7 @@ class PilotStorageError(Exception):
     pass
 
 
-class PilotStore(SessionStore):
+class PilotStore:
     """Private pilot rows have no file fallback and are keyed by authenticated owner."""
 
     def __init__(self, url: str, key: str):
@@ -29,6 +30,11 @@ class PilotStore(SessionStore):
         if not key.startswith("sb_secret_"):
             self.headers["Authorization"] = f"Bearer {key}"
         self.live: dict[str, Session] = {}
+
+    def create(self, owner: str) -> Session:
+        session = Session(uuid4().hex, owner)
+        self.live[session.id] = session
+        return session
 
     def _rows(self, method: str, *, params: dict, **kwargs):
         try:
@@ -55,14 +61,14 @@ class PilotStore(SessionStore):
             return live if live.owner_id == owner else None
         rows = self._rows("GET", params={"owner_id": f"eq.{owner}", "id": f"eq.{sid}",
                                          "select": "id,owner_id,data"})
-        if not rows:
+        if not rows or rows[0]["owner_id"] != owner or rows[0]["id"] != sid:
             return None
         return self.live.setdefault(sid, self._restore(rows[0]))
 
     def list_owned(self, owner: str, limit: int = 8) -> list[dict]:
         rows = self._rows("GET", params={"owner_id": f"eq.{owner}", "select": "id,owner_id,data",
                                          "order": "updated_at.desc,id", "limit": str(limit)})
-        return [self._restore(row).summary() for row in rows]
+        return [self._restore(row).summary() for row in rows if row["owner_id"] == owner]
 
     async def persist(self, session: Session) -> None:
         if not session.owner_id:

@@ -59,6 +59,10 @@ uv run python server/simulate.py              # interview-quality scorecard (nee
 
 Languages: Auto (follows Hinglish), English, हिंदी, ಕನ್ನಡ. The brief is always in English.
 
+## Private pilot
+
+[Set up an invite-only Supabase pilot](docs/PRIVATE_PILOT.md) for work-email sign-in, owner-only interviews, and durable saves. The pilot is typing-only, disables public sharing, and must use a separate deployment and database from the fictional-data demo.
+
 ## Stack (₹0)
 
 Pipecat (BSD-2) · Google Gemini and Groq free tiers · Deepgram signup credit · Sarvam credit · FastAPI · plain HTML/JS.
@@ -68,7 +72,7 @@ Pipecat (BSD-2) · Google Gemini and Groq free tiers · Deepgram signup credit �
 - The leak check catches exact and number-normalised matches, not paraphrases. That's why redaction runs before any AI rewrite.
 - Free AI tiers may use your data to improve their products. Use paid tiers for real confidential work.
 - Voice over the internet needs a TURN server (Daily transport or Pipecat Cloud). On a laptop or LAN it works as is.
-- No login. The session id acts as the owner's key.
+- Demo mode has no login: the session ID acts as the owner's key. Never use demo mode with company data.
 
 ## Roadmap
 

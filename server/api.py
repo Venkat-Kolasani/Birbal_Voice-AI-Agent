@@ -35,6 +35,8 @@ EXPORTS = Path(os.getenv("BIRBAL_EXPORTS", ROOT / "exports"))
 auth = configured_auth()
 DATA = Path(os.getenv("BIRBAL_DATA", ROOT / "data" / "sessions"))
 store = PilotStore(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"]) if auth else make_store(DATA)
+if auth:
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -243,7 +245,7 @@ Lang = Literal["auto", "en", "hi", "kn"]
 async def start(request: Request, mode: Literal["text", "voice", "demo"] = "text", lang: Lang = "auto"):
     if auth and mode != "text":
         raise HTTPException(404, "Only typing is enabled in the private pilot.")
-    sess = store.create(request.state.owner)
+    sess = store.create(request.state.owner) if auth else store.create()
     sess.start(mode, lang)
     if mode == "text":  # in voice mode the bot speaks the opening and records it itself
         sess.add_birbal(OPENING_LINES.get(lang, OPENING_LINE))

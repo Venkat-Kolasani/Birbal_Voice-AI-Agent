@@ -248,8 +248,8 @@ class SessionStore:
         self.root = root
         self.live: dict[str, Session] = {}
 
-    def create(self, owner_id: str | None = None) -> Session:
-        s = Session(uuid.uuid4().hex if owner_id else None, owner_id)
+    def create(self) -> Session:
+        s = Session()
         self.live[s.id] = s
         return s
 
