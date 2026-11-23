@@ -3,6 +3,7 @@
 Wiring found in pipecat 1.12.0 source/examples; see docs/DECISIONS.md D-008. The Scribe runs off the
 hot path via Session.add_owner (asyncio task); the controller note is injected per turn by ControllerNote.
 """
+import asyncio
 import os
 import time
 
@@ -34,6 +35,11 @@ NOTE_PREFIX = "[controller]"
 # Voice resends the whole context every turn. Keeping only the recent turns holds a call near ~1.2k tokens, which
 # fits Groq's 8K TPM; older facts reach the Talker through the controller note's "Last noted" / "Already clear".
 MAX_CONTEXT_MESSAGES = int(os.getenv("MAX_CONTEXT_MESSAGES", "10"))
+REPLY_TIMEOUT_SECONDS = float(os.getenv("VOICE_REPLY_TIMEOUT_SECONDS", "12"))
+
+
+def _active(session: Session) -> bool:
+    return not session.ended and session.mode == "voice" and session.status != "error"
 
 
 def rewrite(msgs: list[dict], note: str, last: str | None, keep: int = MAX_CONTEXT_MESSAGES) -> list[dict]:
@@ -83,16 +89,20 @@ class ControllerNote(FrameProcessor):
 class StatusTap(FrameProcessor):
     """Mirror speaking state into the session for the UI orb."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, clear_reply_timeout):
         super().__init__()
         self.session = session
+        self.clear_reply_timeout = clear_reply_timeout
 
     async def process_frame(self, frame, direction):
         await super().process_frame(frame, direction)
-        if isinstance(frame, BotStartedSpeakingFrame):
-            self.session.status = "speaking"
-        elif isinstance(frame, (BotStoppedSpeakingFrame, UserStartedSpeakingFrame)):
-            self.session.status = "listening"
+        if isinstance(frame, (BotStartedSpeakingFrame, UserStartedSpeakingFrame)):
+            self.clear_reply_timeout()
+        if _active(self.session):
+            if isinstance(frame, BotStartedSpeakingFrame):
+                self.session.status = "speaking"
+            elif isinstance(frame, (BotStoppedSpeakingFrame, UserStartedSpeakingFrame)):
+                self.session.status = "listening"
         await self.push_frame(frame, direction)
 
 
@@ -118,8 +128,15 @@ class TranscriptTap(FrameProcessor):
         self.session = session
         self._final = ""
 
+    def clear(self):
+        self._final = ""
+        self.session.interim = ""
+
     async def process_frame(self, frame, direction):
         await super().process_frame(frame, direction)
+        if not _active(self.session):
+            await self.push_frame(frame, direction)
+            return
         if isinstance(frame, InterimTranscriptionFrame):
             self.session.interim = (self._final + " " + frame.text).strip()
             self.session.status = "listening"
@@ -127,7 +144,7 @@ class TranscriptTap(FrameProcessor):
             self._final = (self._final + " " + frame.text).strip()
             self.session.interim = self._final
         elif isinstance(frame, BotStartedSpeakingFrame):
-            self._final = ""
+            self.clear()
         await self.push_frame(frame, direction)
 
 
@@ -195,19 +212,32 @@ def voice_ready(lang: str = "auto") -> tuple[bool, str]:
         return False, "Hindi/Kannada voice needs SARVAM_API_KEY (Aura speaks English only)."
     if not keys.has({"aura": "deepgram"}.get(tts, tts)):
         return False, f"TTS_PROVIDER={tts} needs {keys.ENV[{'aura': 'deepgram'}.get(tts, tts)]} in .env."
+    if tts == "elevenlabs" and not os.getenv("ELEVENLABS_VOICE_ID"):
+        return False, "Add ELEVENLABS_VOICE_ID to .env for ElevenLabs voice."
     return True, ""
 
 
 async def run_bot(connection, session: Session) -> None:
+    if not _active(session):
+        return
     transport = SmallWebRTCTransport(params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
                                      webrtc_connection=connection)
     # Resuming a session (back from typing, or after a refresh): give the Talker the recent conversation.
+    turns = session.ledger.transcript
     history = [{"role": "assistant" if t.role == "birbal" else "user", "content": t.text}
-               for t in session.ledger.transcript[-MAX_CONTEXT_MESSAGES:]]
+               for t in turns[-MAX_CONTEXT_MESSAGES:]]
     while history and history[0]["role"] != "user":
         history = history[1:]
+    opening = OPENING_LINES.get(session.lang, OPENING_LINE)
+    first_answer = next((i for i, t in enumerate(turns) if t.role == "owner"), len(turns))
+    # A nudge before the first answer, or an answer without a Talker reply, leaves the opening unanswered.
+    opening_pending = not any(t.role == "birbal" for t in turns[first_answer:])
+    resume_question = None
+    if turns:
+        resume_question = opening if opening_pending else session.last_birbal()
+        if opening_pending:
+            history = [{"role": "assistant", "content": opening}, *history[-max(1, MAX_CONTEXT_MESSAGES - 1):]]
     context = LLMContext(messages=history or None)
-    resuming = any(t.role == "owner" for t in session.ledger.transcript)
     # Turn-taking: Pipecat's default stop strategy is the bundled smart-turn model (judges whether the sentence is
     # finished), so VAD only needs a short pause (Pipecat default 0.2 s; we use 0.4 s for people who pause to think).
     # Barge-in needs a few real words, so venue noise or a cough doesn't cut Birbal off.
@@ -217,15 +247,41 @@ async def run_bot(connection, session: Session) -> None:
         user_turn_strategies=UserTurnStrategies(
             start=[MinWordsUserTurnStartStrategy(min_words=int(os.getenv("BARGE_IN_MIN_WORDS", "2")))])))
 
+    reply_timeout: asyncio.Task | None = None
+    runner = WorkerRunner(handle_sigint=False)
+    transcript = TranscriptTap(session)
+
+    def clear_reply_timeout():
+        nonlocal reply_timeout
+        if reply_timeout:
+            reply_timeout.cancel()
+            reply_timeout = None
+
+    async def fail_voice(message: str):
+        if _active(session):
+            session.status, session.last_error = "error", message
+            transcript.clear()
+        await runner.cancel()
+
+    async def await_reply():
+        await asyncio.sleep(REPLY_TIMEOUT_SECONDS)
+        logger.warning("Voice reply exceeded its audio deadline")
+        await fail_voice("Voice took too long to respond.")
+
+    def expect_reply():
+        nonlocal reply_timeout
+        clear_reply_timeout()
+        reply_timeout = asyncio.create_task(await_reply())
+
     pipeline = Pipeline([
-        transport.input(), make_stt(session.lang), TranscriptTap(session), user_agg, ControllerNote(session), make_llm(session.lang),
+        transport.input(), make_stt(session.lang), transcript, user_agg, ControllerNote(session), make_llm(session.lang),
         make_tts(session.lang),
-        transport.output(), StatusTap(session), assistant_agg,
+        transport.output(), StatusTap(session, clear_reply_timeout), assistant_agg,
     ])
     worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True, enable_usage_metrics=True))
-    runner = WorkerRunner(handle_sigint=False)
     await runner.add_workers(worker)
     idle_nudged = False
+    asked_on_resume = None
 
     recent_errors: list[float] = []
 
@@ -233,55 +289,67 @@ async def run_bot(connection, session: Session) -> None:
     async def on_error(worker, frame):
         # A fatal error, or 2 errors within 10 s, means voice is broken: the UI then switches to typing in the same
         # interview. A single transient hiccup is only logged. Text mode has its own key/provider failover.
-        err = str(getattr(frame, "error", "voice error"))[:200]
-        logger.error(f"voice pipeline error: {err}")
+        processor = getattr(frame, "processor", None)
+        logger.warning("Voice pipeline error in {} (fatal={})", type(processor).__name__, frame.fatal)
         now = time.monotonic()
         recent_errors[:] = [t for t in recent_errors if now - t < 10] + [now]
         if getattr(frame, "fatal", False) or len(recent_errors) >= 2:
-            session.status, session.last_error = "error", err
+            await fail_voice("A voice service stopped responding.")
 
     @transport.event_handler("on_client_connected")
     async def on_connected(transport, client):
+        nonlocal asked_on_resume
+        if not _active(session):
+            await runner.cancel()
+            return
         logger.info("voice client connected")
-        # Deterministic opening, no LLM call. TTSSpeakFrame appends the spoken text to context by default.
-        if resuming:
-            last_q = session.last_birbal() or "Where were we?"
-            await worker.queue_frames([TTSSpeakFrame(f"I'm back. {last_q}")])
+        expect_reply()
+        if resume_question is not None:
+            asked_on_resume = resume_question
+            await worker.queue_frames([TTSSpeakFrame(f"I'm back. {resume_question}", append_to_context=False)])
         else:
-            await worker.queue_frames([TTSSpeakFrame(OPENING_LINES.get(session.lang, OPENING_LINE))])
+            await worker.queue_frames([TTSSpeakFrame(opening)])
 
     @transport.event_handler("on_client_disconnected")
     async def on_disconnected(transport, client):
         logger.info("voice client disconnected")
         # Disconnect is not the end: "Type instead" and page refresh both close the connection mid-interview.
         # Ending stays the owner's explicit act (/api/end).
-        if not session.ended:
-            session.status = "listening"
         await runner.cancel()
 
     @user_agg.event_handler("on_user_turn_stopped")
     async def on_user_turn(aggregator, strategy, message):
-        nonlocal idle_nudged
+        nonlocal idle_nudged, asked_on_resume
         idle_nudged = False
-        if message.content:
+        if _active(session) and message.content:
+            transcript.clear()
             session.status = "thinking"
-            session.add_owner(message.content)
+            session.add_owner(message.content, asked=asked_on_resume)
+            asked_on_resume = None
+            expect_reply()
 
     @assistant_agg.event_handler("on_assistant_turn_stopped")
     async def on_assistant_turn(aggregator, message):
-        if message.content:
+        if _active(session) and message.content:
             session.add_birbal(message.content)
 
     @user_agg.event_handler("on_user_turn_idle")
     async def on_idle(aggregator):
         nonlocal idle_nudged
-        if idle_nudged or session.ended:
+        if idle_nudged or not _active(session) or session.status != "listening":
             return
         idle_nudged = True
+        expect_reply()
         await aggregator.push_frame(LLMMessagesAppendFrame([{
             "role": "user",
             "content": f"{NOTE_PREFIX} The owner has been quiet for a while. Gently say: take your time, or we can skip this one."}],
             run_llm=True))
 
-    await runner.run()
+    try:
+        await runner.run()
+    finally:
+        pending_reply = reply_timeout
+        clear_reply_timeout()
+        if pending_reply:
+            await asyncio.gather(pending_reply, return_exceptions=True)
     logger.info("voice pipeline finished")

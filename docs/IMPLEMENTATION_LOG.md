@@ -111,3 +111,20 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 - Built: `web/landing.html` at `/` (hero, self-playing interview example, four grades, privacy features, benchmark stats); the app moved to `/start`; links updated.
 - Providers set: Talker Groq gpt-oss-120b; Scribe Command Code gpt-5.6-luna; Gemini flash-lite in the chain. Benchmark 27/28 (96%).
 - Verified: all routes 200; landing checked in Chrome at 1440 px. 51 tests pass.
+
+## 2026-11-23 22:15 IST — Voice lifecycle and same-interview fallback
+- `server/api.py`, `server/bot.py`, `.env.example`: run one peer per interview, enforce per-process limits, bound the wait for speech, and close peer and pipeline on a mode switch, end, or shutdown.
+- `web/voice.js`, `web/index.html`: use the Pipecat SDK, release the mic on failure or navigation, and keep the interview open for typing when voice fails.
+- Verified: `uv run --frozen pytest -q` (60 passed, including a real local WebRTC and RTVI handshake using provider doubles); `node --test scripts/voice.test.cjs` (3 passed with a client double); JavaScript syntax and `git diff --check` pass.
+- Next: test live browser microphone, playback and barge-in, then TURN on a restricted network. Auth, storage, privacy, sharing and deployment are unchanged.
+
+## 2026-11-23 22:32 IST — Per-attempt microphone ownership
+- `web/voice.js` and `scripts/voice.test.cjs`: keep Pipecat signaling, capture one native mic per attempt, and release its track and optional meter on close. An ended track returns the same interview to typing.
+- Verified: `uv run --frozen pytest -q` (60 passed); `node --test scripts/voice.test.cjs` (6 passed). Chrome with simulated providers verified audio, mute, typing, resumed voice, and recovery after native permission revocation.
+- Next: live providers and barge-in, Firefox, physical device removal, and hosted TURN. Add authenticated voice admission and preserve final in-flight speech before a company rollout.
+
+## 2026-11-23 23:13 IST — Voice review fixes
+- `server/api.py`, `web/voice.js`, and `web/index.html`: allow a quick voice resume to wait for peer teardown and preserve mute before negotiation. Mark the old browser-client decision superseded.
+- Verified: `pytest -q` (61 passed) and `node --test scripts/voice.test.cjs` (7 passed). Authenticated admission and per-user quotas still gate a public rollout.
+- Chrome with synthetic speech confirmed mute stayed on at negotiation checkpoints. A resume before the first answer now repeats the question as a resume prompt rather than appending a second opening. This and the queued-resume cancellation are covered by 64 Python tests.
+- The reconnect prompt now supplies the question to the Scribe and preserves the Talker's opening context if the first reply failed. Covered by regressions for reconnect after an idle nudge and after an unanswered first turn.

@@ -102,6 +102,30 @@ Template:
 - Cause: the LLM wrote a generalisation containing the number it was meant to hide.
 - Fix: `_safe_generalisation` in brief.py; test added.
 
+## ISS-016 — Pipecat full peer restart ends the existing voice worker [handled by fallback]
+- Pipecat 1.12.0 emits `disconnected` inside `renegotiate(restart_pc=True)`. The interview worker cancels on that event, so sending a new SDP answer would leave the browser with no pipeline.
+- Reject that restart with `409 Voice connection lost. Continue by typing or start voice again.`, release the peer, and preserve the interview for typing or a new connection.
+
+## ISS-017 — First browser start incorrectly reported no microphone [resolved]
+- Browser displayed `No microphone available. You can continue by typing.` before signaling. The SDK can return from device initialization before it publishes the local track.
+- Treat SDK microphone errors as authoritative. Browser voice opened after removing the early check against the default manager.
+
+## ISS-018 — Daily call-object reuse exposes the next mic to old listeners [resolved in Chrome]
+- Resuming voice can reuse the same Daily call object. A closed attempt's track callback can run for the new mic and stop it.
+- Each attempt captures its own native microphone track and hands it to Pipecat for transport.
+- In Chrome, switching to typing ended the old track and resuming voice committed a new answer with a different live track.
+
+## ISS-019 — WavMediaManager adds unused audio processing and incomplete cleanup [removed]
+- Review flagged a fixed-rate recorder that can fail at initialization on Firefox, no sender update on mic replacement, and retained listeners and audio contexts after close.
+- Capture a native microphone without audio-rate conversion. If it ends, release the connection and fall back to typing. Stop the track and close Birbal's level meter on every cleanup path.
+- Chrome permission revocation showed `Microphone disconnected. You can continue by typing.` and released the mic and peer. Firefox and physical unplug still need testing.
+
+## ISS-020 — Voice resume may race teardown or restore an enabled mic [resolved]
+- A quick return to voice could get `409 Voice is already connecting or active for this interview.` while the previous peer closed. A fresh offer now waits briefly for a stopped peer to release its slot, without delaying typing or overlapping the peers.
+- A muted owner could reconnect with an enabled track until signaling completed. The replacement track starts disabled before it is handed to Pipecat.
+- A queued reconnect could override a newer request to keep typing. Resuming now checks whether the owner switched to typing again during cleanup.
+- Until Birbal replies to the first answer, voice resume restates the opening without adding a transcript entry. The Talker keeps the opening with any unanswered turns, and the Scribe pairs the next answer with the question the owner heard.
+
 ## Known risks to watch (not yet issues)
 - flash-lite daily quota unknown; if it 429s mid-event, Groq carries text mode (8K TPM is enough for typed turns and the Scribe) and voice degrades to typing.
 - Pooling API keys from several accounts may breach provider terms (Google APIs ToS 2(d); Groq 6.3(d)(iii)). The risk is suspension on demo day.
