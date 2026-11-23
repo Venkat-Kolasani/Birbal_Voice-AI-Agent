@@ -25,11 +25,18 @@
 
 <main id="startView" class="start">
   <h1>Tell Birbal about a problem.</h1>
-  <p class="lead">Birbal asks the right questions, separates what you've seen from what you've guessed, and writes a brief builders can act on. You approve before anything is shared.</p>
+  <p class="lead" id="intro">Birbal asks follow-up questions and writes a brief builders can act on. Review the brief before sharing it.</p>
+  <section class="privacyNotice" id="pilotPrivacy" aria-labelledby="privacyTitle" hidden>
+    <h2 id="privacyTitle">Before you start: how Birbal uses your data</h2>
+    <p><strong>AI processing.</strong> Birbal sends what you type to AI services to ask follow-up questions and draft your brief. They receive your answers before redaction.</p>
+    <p id="providerDisclosure"></p>
+    <p><strong>Saving and sharing.</strong> Birbal saves your interview in Supabase under your account. This pilot doesn't post it publicly or send it to builders. You can download a redacted brief after you approve it.</p>
+    <p>Leave out passwords, customer records, and anything your organization hasn't cleared for AI use. Ask your pilot administrator about retention or deletion.</p>
+  </section>
   <div class="row">
-    <button class="btn primary lg" id="startVoice"></button>
-    <button class="btn lg" id="startText"></button>
-    <button class="btn ghost lg" id="startDemo" hidden></button>
+    <button class="btn primary lg" id="startVoice" disabled></button>
+    <button class="btn lg" id="startText" disabled></button>
+    <button class="btn ghost lg" id="startDemo" hidden disabled></button>
   </div>
   <div class="langrow">
     <span class="label">Interview language</span>
@@ -86,15 +93,22 @@
 <script>
 initTheme();
 const $ = (id) => document.getElementById(id);
-const pilotSetup = setupPilot(() => {
+const pilotSetup = setupPilot((status) => {
+  const providers = status.interview_providers;
   isPrivatePilot = true;
   $("startDemo").hidden = true;
   $("startVoice").hidden = true;
   $("startText").textContent = "Start interview";
-  $("m1").textContent = "Only you can open your interviews.";
-  $("m3").textContent = "Birbal sends answers to its configured AI providers to run the interview and write the brief.";
+  $("startText").classList.add("primary");
+  $("startText").setAttribute("aria-describedby", "pilotPrivacy");
+  $("intro").textContent = "Birbal asks follow-up questions and drafts a private brief for you to review.";
+  $("m1").hidden = $("m3").hidden = true;
+  $("providerDisclosure").textContent = providers.length
+    ? "AI services this pilot may use, including backups: " + new Intl.ListFormat("en").format(providers) + "."
+    : "No AI services are configured for this pilot.";
+  $("pilotPrivacy").hidden = false;
   $("recentLabel").textContent = "Your recent interviews";
-}).catch(() => {});
+});
 const demo = new URLSearchParams(location.search).has("demo");
 $("startVoice").innerHTML = icon("mic") + "Start interview";
 $("startText").innerHTML = icon("keyboard") + "Type instead";
@@ -326,7 +340,14 @@ async function home() {
 }
 
 (async () => {
-  await pilotSetup;
+  try {
+    await pilotSetup;
+    $("startDemo").disabled = isPrivatePilot;
+  } catch (e) {
+    $("startErr").textContent = "Birbal couldn't load the interview settings. Reload and try again.";
+    $("startErr").hidden = false;
+    return;
+  }
   const s0 = params.get("s");
   if (s0) {
     try {
