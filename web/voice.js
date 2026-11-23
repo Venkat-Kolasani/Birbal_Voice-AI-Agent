@@ -1,4 +1,5 @@
 let active = null;
+const MIC_ERROR = "Mic blocked or unavailable. Check microphone access in your browser.";
 
 function loadSDK() {
   return Promise.all([
@@ -19,6 +20,7 @@ function close(run, reason) {
   run.abort.abort(reason);
   run.audio.pause();
   run.audio.srcObject = null;
+  run.mic?.stop();
   release(run.client);
 }
 
@@ -66,9 +68,16 @@ async function start(run, session, lang, onLevel, onError) {
       onDisconnected: disconnected,
       onBotDisconnected: disconnected,
       onTransportStateChanged: (state) => { if (state === "error") disconnected(); },
+      onDeviceError: (error) => { if (error.devices.includes("mic")) fail(MIC_ERROR); },
       onLocalAudioLevel: (level) => { if (!signal.aborted) onLevel(level); },
       onTrackStarted: (track, participant) => {
-        if (signal.aborted || participant?.local || track.kind !== "audio") return;
+        if (track.kind !== "audio") return;
+        if (participant?.local) {
+          if (signal.aborted) track.stop();
+          else run.mic = track;
+          return;
+        }
+        if (signal.aborted) return;
         run.audio.srcObject = new MediaStream([track]);
         run.audio.play().catch(() => fail("Your browser blocked Birbal's audio."));
       },
@@ -79,10 +88,9 @@ async function start(run, session, lang, onLevel, onError) {
     try {
       await client.initDevices();
     } catch {
-      throw new Error("Mic blocked. Allow microphone access in your browser, or use “Type instead”.");
+      throw new Error(MIC_ERROR);
     }
     signal.throwIfAborted();
-    if (!client.tracks().local.audio) throw new Error("No microphone available.");
     await client.connect({ webrtcRequestParams: {
       endpoint: new URL("/api/offer", window.location.href).href,
       requestData: { session },

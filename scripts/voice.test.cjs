@@ -12,11 +12,15 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function setup() {
+function setup({ delayTrack = false } = {}) {
   const timers = new Map();
   const permission = deferred(), requestedMic = deferred();
   const handshake = deferred(), offered = deferred();
   let stopped = false, mic, callbacks, signal, id = 0, disconnects = 0;
+  const publishMic = () => {
+    mic = { kind: "audio", stop: () => { stopped = true; } };
+    callbacks.onTrackStarted(mic, { local: true });
+  };
   const window = { location: { href: "https://birbal.test/start" }, addEventListener() {} };
   class Client {
     constructor(options) { callbacks = options.callbacks; }
@@ -24,7 +28,7 @@ function setup() {
     async initDevices() {
       requestedMic.resolve();
       await permission.promise;
-      mic = { stop: () => { stopped = true; } };
+      if (!delayTrack) publishMic();
     }
     tracks() { return { local: { audio: mic } }; }
     connect(params) { offered.resolve(params); return handshake.promise; }
@@ -42,7 +46,8 @@ function setup() {
     clearTimeout: (timer) => timers.delete(timer),
   });
   return {
-    client: window.BirbalVoice, permission, requestedMic, offered, handshake,
+    client: window.BirbalVoice, permission, requestedMic, offered, handshake, publishMic,
+    denyMic: () => callbacks.onDeviceError({ devices: ["mic"] }),
     loseConnection: () => callbacks.onDisconnected(),
     fireTimer: (ms) => {
       const timer = [...timers.values()].find((t) => t.ms === ms);
@@ -75,7 +80,7 @@ test("unanswered permission times out and releases media even if granted later",
 });
 
 test("waits for bot-ready and reports loss once for the current interview", async () => {
-  const t = setup();
+  const t = setup({ delayTrack: true });
   t.permission.resolve();
   const errors = [];
   let connected = false;
@@ -85,10 +90,20 @@ test("waits for bot-ready and reports loss once for the current interview", asyn
   assert.equal(webrtcRequestParams.endpoint, "https://birbal.test/api/offer");
   assert.equal(webrtcRequestParams.requestData.session, "fixture");
   assert.equal(connected, false);
+  t.publishMic();
   t.handshake.resolve();
   await connecting;
   t.loseConnection();
   t.loseConnection();
   assert.deepEqual(errors, ["Voice connection lost."]);
   assert.equal(t.cleaned(), true);
+});
+
+test("a microphone device error ends the attempt without waiting for negotiation", async () => {
+  const t = setup();
+  const connecting = t.client.connect({ session: "fixture" });
+  await t.requestedMic.promise;
+  t.denyMic();
+  await assert.rejects(connecting, /Mic blocked or unavailable/);
+  t.permission.resolve();
 });
