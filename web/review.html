@@ -58,7 +58,7 @@
 initTheme();
 const $ = (id) => document.getElementById(id);
 let privatePilot = false;
-setupPilot(() => {
+const pilotSetup = setupPilot(() => {
   privatePilot = true;
   $("confirmTitle").textContent = "Approve this brief for download?";
   $("doApprove").textContent = "Approve";
@@ -155,6 +155,8 @@ function render() {
   $("approve").disabled = blocked;
   $("approve").title = blocked ? "A private item is visible in a shareable version" : "Approve (⌘↵)";
   $("approve").innerHTML = data.approved ? icon("check") + " Approved" : "Approve " + icon("arrow");
+  $("dl").hidden = privatePilot && (cur === "me" || !data.approved);
+  if ($("dl").hidden) { closeMenu(); return; }
   $("menu").innerHTML = ["md", "json"].map((f) => `<a href="/api/export/${cur}.${f}?s=${sid}" aria-disabled="${cur !== "me" && !data.approved}">${f === "md" ? "Markdown" : "JSON"}<span style="color:var(--faint)">.${f}</span></a>`).join("")
     + `<a href="#" id="pdf" aria-disabled="${cur !== "me" && !data.approved && !token}">PDF<span style="color:var(--faint)">.pdf</span></a>`
     + `<a href="#" id="copy">Copy to clipboard</a>`
@@ -205,7 +207,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !$("approve").disabled) $("approve").click();
   if (e.key === "Escape") { pop?.remove(); closeMenu(); }
 });
-load();
+pilotSetup.then(() => load());
 </script>
 </body>
 </html>

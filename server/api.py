@@ -401,6 +401,8 @@ async def approve(s: str, request: Request):
 @app.get("/api/export/{audience}.{fmt}")
 async def export(s: str, audience: Audience, fmt: Literal["md", "json"], request: Request):
     sess = await _get(s, request)
+    if auth and audience == "me":
+        raise HTTPException(403, "The private owner brief is view-only in the pilot.")
     if audience != "me" and not sess.approved:
         raise HTTPException(403, "Approve the brief before exporting shareable versions.")
     v = (await sess.brief())[audience]

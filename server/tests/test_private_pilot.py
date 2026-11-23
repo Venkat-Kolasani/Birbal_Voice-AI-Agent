@@ -135,9 +135,12 @@ def test_pilot_blocks_cross_origin_and_external_publication(pilot, monkeypatch, 
     assert client.post("/api/start?mode=voice").status_code == 404
     sid = client.post("/api/start").json()["id"]
     assert client.post(f"/api/end?s={sid}").status_code == 200
+    assert client.get(f"/api/export/me.json?s={sid}").status_code == 403
+    assert client.get(f"/api/export/builders.md?s={sid}").status_code == 403
     approved = client.post(f"/api/approve?s={sid}").json()
     assert approved["share"] is None and approved["approved"]
     assert not api.EXPORTS.exists()
+    assert client.get(f"/api/export/me.json?s={sid}").status_code == 403
     assert client.get(f"/api/export/builders.md?s={sid}").status_code == 200
 
 
