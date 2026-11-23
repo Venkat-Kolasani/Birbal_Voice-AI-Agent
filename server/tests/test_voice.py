@@ -251,9 +251,9 @@ def test_worker_timeout_or_failure_routes_to_text(voice, monkeypatch, caplog, fa
 
 
 @pytest.mark.parametrize("audio_starts", [False, True])
-@pytest.mark.parametrize("resuming_intro", [False, True])
-def test_opening_audio_deadline(monkeypatch, audio_starts, resuming_intro):
-    spoken = []
+@pytest.mark.parametrize("prior_turn", [None, "intro", "nudge"])
+def test_opening_audio_deadline(monkeypatch, audio_starts, prior_turn):
+    frames_sent = []
     class Events:
         def __init__(self):
             self.events = {}
@@ -273,7 +273,7 @@ def test_opening_audio_deadline(monkeypatch, audio_starts, resuming_intro):
 
     class Worker(Events):
         async def queue_frames(self, frames):
-            spoken.extend(frame.text for frame in frames)
+            frames_sent.extend(frames)
             if audio_starts:
                 status_tap.clear_reply_timeout()
 
@@ -303,11 +303,12 @@ def test_opening_audio_deadline(monkeypatch, audio_starts, resuming_intro):
         monkeypatch.setattr(bot, name, lambda lang: None)
     session = api.Session()
     session.start(mode="voice")
-    if resuming_intro:
+    if prior_turn:
         session.add_birbal(bot.OPENING_LINE)
+    if prior_turn == "nudge":
+        session.add_birbal("Take your time.")
     asyncio.run(bot.run_bot(None, session))
     assert session.status == ("listening" if audio_starts else "error")
-    if resuming_intro:
-        assert spoken == [f"I'm back. {bot.OPENING_LINE}"]
-        session.add_birbal(spoken[0])
-        assert [turn.text for turn in session.ledger.transcript] == [bot.OPENING_LINE]
+    assert len(frames_sent) == 1
+    assert frames_sent[0].text == (f"I'm back. {bot.OPENING_LINE}" if prior_turn else bot.OPENING_LINE)
+    assert frames_sent[0].append_to_context is (prior_turn is None)

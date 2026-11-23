@@ -227,8 +227,12 @@ async def run_bot(connection, session: Session) -> None:
                for t in session.ledger.transcript[-MAX_CONTEXT_MESSAGES:]]
     while history and history[0]["role"] != "user":
         history = history[1:]
-    context = LLMContext(messages=history or None)
+    opening = OPENING_LINES.get(session.lang, OPENING_LINE)
     resuming = bool(session.ledger.transcript)
+    has_answer = any(t.role == "owner" for t in session.ledger.transcript)
+    if resuming and not has_answer:
+        history = [{"role": "assistant", "content": opening}]
+    context = LLMContext(messages=history or None)
     # Turn-taking: Pipecat's default stop strategy is the bundled smart-turn model (judges whether the sentence is
     # finished), so VAD only needs a short pause (Pipecat default 0.2 s; we use 0.4 s for people who pause to think).
     # Barge-in needs a few real words, so venue noise or a cough doesn't cut Birbal off.
@@ -293,12 +297,11 @@ async def run_bot(connection, session: Session) -> None:
             return
         logger.info("voice client connected")
         expect_reply()
-        # Deterministic opening, no LLM call. TTSSpeakFrame appends the spoken text to context by default.
         if resuming:
-            last_q = session.last_birbal() or "Where were we?"
-            await worker.queue_frames([TTSSpeakFrame(f"I'm back. {last_q}")])
+            question = (session.last_birbal() or "Where were we?") if has_answer else opening
+            await worker.queue_frames([TTSSpeakFrame(f"I'm back. {question}", append_to_context=False)])
         else:
-            await worker.queue_frames([TTSSpeakFrame(OPENING_LINES.get(session.lang, OPENING_LINE))])
+            await worker.queue_frames([TTSSpeakFrame(opening)])
 
     @transport.event_handler("on_client_disconnected")
     async def on_disconnected(transport, client):
