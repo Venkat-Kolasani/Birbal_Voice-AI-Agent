@@ -60,7 +60,7 @@ async function setupPilot(onPrivate = () => {}) {
     try { await api("/api/auth/logout", { method: "POST" }); location.replace("/login"); }
     catch (error) { toast(error.message); }
   };
-  onPrivate();
+  onPrivate(status);
 }
 
 function toast(msg) {

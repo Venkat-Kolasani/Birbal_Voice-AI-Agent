@@ -151,6 +151,24 @@ def test_pilot_blocks_cross_origin_and_external_publication(pilot, monkeypatch, 
     assert client.get(f"/api/export/builders.md?s={sid}").status_code == 200
 
 
+def test_privacy_disclosure_includes_fallback_but_does_not_expose_credentials(pilot, monkeypatch):
+    for var in ("GOOGLE_API_KEY", "GROQ_API_KEY", "ALT_LLM_KEY"):
+        monkeypatch.delenv(var, raising=False)
+        monkeypatch.delenv(var + "S", raising=False)
+    client = pilot.client(ALICE)
+    assert pilot.client().get("/api/auth/status").status_code == 401
+    assert client.get("/api/auth/status").json() == {"private": True, "interview_providers": []}
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "primary-fixture")
+    monkeypatch.setenv("ALT_LLM_KEYS", "fallback-one,fallback-two")
+    monkeypatch.setattr(llm, "ALT_BASE", "https://user:secret@gateway.example.test/tenant?key=hidden")
+    reply = client.get("/api/auth/status")
+    assert reply.headers["Cache-Control"] == "no-store"
+    assert reply.json() == {
+        "private": True, "interview_providers": ["Google Gemini", "Configured AI gateway (gateway.example.test)"],
+    }
+
+
 def test_owner_scoped_routes_and_durable_resume(pilot, monkeypatch):
     owner, other = pilot.client(ALICE), pilot.client(BOB)
     sid = owner.post("/api/start").json()["id"]

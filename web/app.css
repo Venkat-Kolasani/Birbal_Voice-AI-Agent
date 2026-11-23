@@ -65,6 +65,10 @@ kbd { font: 11px var(--font); color: var(--faint); border: 1px solid var(--borde
 .start { max-width: 640px; margin: 14vh auto 0; padding: 0 24px; }
 .start h1 { font-size: 28px; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 12px; font-weight: 600; }
 .start p.lead { color: var(--muted); font-size: 16px; margin: 0 0 28px; max-width: 520px; }
+.privacyNotice { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  margin: 0 0 20px; padding: 14px 16px; overflow-wrap: anywhere; }
+.privacyNotice h2 { font-size: 15px; margin: 0 0 8px; }
+.privacyNotice p { margin: 8px 0 0; }
 .start .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .start .meta { margin-top: 28px; display: grid; gap: 8px; color: var(--muted); font-size: 13px; }
 .start .meta div { display: flex; align-items: center; gap: 8px; }

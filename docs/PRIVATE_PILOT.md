@@ -17,7 +17,8 @@ The owner signs in with a one-time work-email code and sees only their interview
    | `SUPABASE_PUBLISHABLE_KEY` | Project publishable key for sign-in |
    | `SUPABASE_KEY` | Server-only secret or legacy service-role key for storage |
 
-5. Before inviting anyone, test with two approved accounts and fictional text. Confirm one cannot open the other's direct state/review/download URLs; restart the app and confirm the owner can resume. Try an unapproved email and confirm it cannot sign in. Verify the configured AI providers and retention policy before admitting any company data; interviews still go to the configured Talker and Scribe.
+5. Before inviting anyone, test with two approved accounts and fictional text. Confirm one cannot open the other's direct state/review/download URLs; restart the app and confirm the owner can resume. Try an unapproved email and confirm it cannot sign in.
+6. The start screen lists every AI provider with a configured key, including fallback providers. The optional OpenAI-compatible gateway is listed by hostname. Keep keys only for approved services, verify any downstream providers behind a gateway, and tell invitees what retention and deletion rules apply before admitting company data. The Talker and Scribe receive interview text before redaction; redaction protects the downloadable brief, not requests to AI providers.
 
 ## Operational limits
 

@@ -122,3 +122,6 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 - Show the previous transcript until the typed turn commits. Drain late Scribe notes on orderly shutdown and resume the elapsed clock when the owner reopens the interview.
 - Verified: `uv run --frozen pytest -q` (66 passed), browser JavaScript syntax, and `git diff --check`. Hosted email delivery remains unverified.
 - Browser retest passed against synthetic providers, including review permissions and restart recovery. The shutdown drain also now saves notes that finish during the first final write (67 Python tests passed).
+
+## 2026-11-23 23:50 IST — Private pilot privacy notice
+- Disclose Supabase sign-in and storage, pre-redaction AI processing, and all configured fallback providers. Keep Start disabled until the interview settings and notice load. Approval still only unlocks redacted downloads.

@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+from collections.abc import Collection
+from urllib.parse import urlsplit
 
 from . import keys
 
@@ -24,19 +26,34 @@ GROQ_REASONING = os.getenv("GROQ_REASONING_EFFORT", "low")  # gpt-oss reasons be
 # daily cap (Gemini: 20/day on 3.x-flash; flash-lite exhausted after ~100 calls on 2026-10-18) must never end the demo.
 ALT_MODEL = os.getenv("ALT_LLM_MODEL", "gpt-5.6-luna")
 ALT_BASE = os.getenv("ALT_LLM_BASE", "https://api.commandcode.ai/provider/v1")
+PROVIDERS = ("gemini", "groq", "alt")
 
 
-def _order(prefer: str, table: dict) -> list:
+def configured_providers() -> list[str]:
+    return [name for name in PROVIDERS if keys.has(name)]
+
+
+def provider_labels() -> list[str]:
+    labels = {"gemini": "Google Gemini", "groq": "Groq"}
+    providers = configured_providers()
+    if "alt" in providers:
+        try:
+            host = urlsplit(ALT_BASE).hostname
+        except ValueError:
+            host = None
+        labels["alt"] = f"Configured AI gateway ({host})" if host else "Configured AI gateway"
+    return [labels[name] for name in providers]
+
+
+def _order(prefer: str, candidates: Collection[str]) -> list[str]:
     """Providers with keys, preferred first; a provider whose keys are all resting goes to the back."""
-    names = [prefer] + [n for n in table if n != prefer]
-    names = list(dict.fromkeys(names))
-    names = [n for n in names if n in table and keys.has(n)]
-    return sorted(names, key=lambda n: not keys.provider_healthy(n))
+    names = [name for name in configured_providers() if name in candidates]
+    return sorted(names, key=lambda name: (not keys.provider_healthy(name), name != prefer))
 
 
 def talker_provider() -> str:
     """Which provider the Talker will use right now (picked per voice interview)."""
-    order = _order(TALKER_PROVIDER, {"gemini": None, "groq": None, "alt": None})
+    order = _order(TALKER_PROVIDER, PROVIDERS)
     return order[0] if order else ""
 
 
@@ -92,7 +109,7 @@ async def _alt(system: str, user: str, key: str) -> dict | None:
 
 
 def available() -> bool:
-    return keys.has("gemini") or keys.has("groq") or keys.has("alt")
+    return bool(configured_providers())
 
 
 async def complete_json(system: str, user: str, timeout: float = 15.0) -> dict | None:
