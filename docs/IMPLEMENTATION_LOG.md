@@ -122,3 +122,7 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 - `web/voice.js` and `scripts/voice.test.cjs`: keep Pipecat signaling, capture one native mic per attempt, and release its track and optional meter on close. An ended track returns the same interview to typing.
 - Verified: `uv run --frozen pytest -q` (60 passed); `node --test scripts/voice.test.cjs` (6 passed). Chrome with simulated providers verified audio, mute, typing, resumed voice, and recovery after native permission revocation.
 - Next: live providers and barge-in, Firefox, physical device removal, and hosted TURN. Add authenticated voice admission and preserve final in-flight speech before a company rollout.
+
+## 2026-11-23 23:13 IST — Voice review fixes
+- `server/api.py`, `web/voice.js`, and `web/index.html`: allow a quick voice resume to wait for peer teardown and preserve mute before negotiation. Mark the old browser-client decision superseded.
+- Verified: `pytest -q` (61 passed) and `node --test scripts/voice.test.cjs` (7 passed). Authenticated admission and per-user quotas still gate a public rollout.
