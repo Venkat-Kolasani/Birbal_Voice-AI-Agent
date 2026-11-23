@@ -17,7 +17,7 @@ function setup({ hasMic = true } = {}) {
   const permission = deferred(), requestedMic = deferred();
   const handshake = deferred(), offered = deferred();
   let stopped = false, meterClosed = false, meterCancelled = false;
-  let callbacks, signal, id = 0;
+  let callbacks, signal, initialMicOption, id = 0;
   const mic = { enabled: true, getSettings: () => ({}), stop: () => { stopped = true; } };
   const tracks = hasMic ? [mic] : [];
   const window = { location: { href: "https://birbal.test/start" }, addEventListener() {} };
@@ -27,12 +27,14 @@ function setup({ hasMic = true } = {}) {
   class Client {
     constructor(options) {
       callbacks = options.callbacks;
+      initialMicOption = options.enableMic;
       this.media = options.transport.media;
       this.media.setClientOptions(options);
     }
     setLogLevel() {}
     initDevices() { return this.media.initialize(); }
     connect(params) { offered.resolve(params); return handshake.promise; }
+    enableMic(enabled) { this.media.enableMic(enabled); }
     async disconnect() { await this.media.disconnect(); callbacks.onDisconnected(); }
   }
   vm.runInNewContext(source + "\nloadSDK = fakeSDK;", {
@@ -71,6 +73,8 @@ function setup({ hasMic = true } = {}) {
     },
     cleaned: () => stopped && signal.aborted,
     meterReleased: () => meterClosed && meterCancelled,
+    micEnabled: () => mic.enabled,
+    initialMicOption: () => initialMicOption,
   };
 }
 
@@ -128,6 +132,20 @@ test("initialization without a microphone is rejected before negotiation", async
   const connecting = t.client.connect({ session: "fixture" });
   t.permission.resolve();
   await assert.rejects(connecting, /Mic blocked or unavailable/);
+});
+
+test("a muted reconnect never negotiates with an enabled microphone", async () => {
+  const t = setup();
+  t.permission.resolve();
+  const connecting = t.client.connect({ session: "fixture", muted: true });
+  await t.offered.promise;
+  assert.equal(t.initialMicOption(), false);
+  assert.equal(t.micEnabled(), false);
+  t.handshake.resolve();
+  await connecting;
+  t.client.setMuted(false);
+  assert.equal(t.micEnabled(), true);
+  t.client.disconnect();
 });
 
 test("removing the active microphone releases audio and reports a failure", async () => {

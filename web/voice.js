@@ -19,8 +19,9 @@ function close(run, reason) {
 }
 
 // Pipecat owns WebRTC; this mic-only adapter owns just the browser track.
-function microphone(stream, onLevel, onEnded) {
+function microphone(stream, muted, onLevel, onEnded) {
   const track = stream.getAudioTracks()[0];
+  track.enabled = !muted;
   track.onended = onEnded;
   let callbacks, meter, frame;
   try {
@@ -58,9 +59,9 @@ function microphone(stream, onLevel, onEnded) {
   };
 }
 
-async function connect({ session, lang = "auto", onLevel = () => {}, onError = () => {} } = {}) {
+async function connect({ session, lang = "auto", muted = false, onLevel = () => {}, onError = () => {} } = {}) {
   if (active) throw new Error("Voice is already connecting or connected.");
-  const run = { abort: new AbortController(), audio: new Audio() };
+  const run = { abort: new AbortController(), audio: new Audio(), muted };
   active = run;
   const signal = run.abort.signal;
   const aborted = new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
@@ -106,10 +107,10 @@ async function start(run, session, lang, onLevel, onError) {
     signal.throwIfAborted();
     throw new Error(MIC_ERROR);
   }
-  run.media = microphone(stream, onLevel, () => fail("Microphone disconnected."));
+  run.media = microphone(stream, run.muted, onLevel, () => fail("Microphone disconnected."));
   const client = run.client = new PipecatClient({
     transport: new SmallWebRTCTransport({ iceServers: cfg.ice, mediaManager: run.media }),
-    enableMic: true,
+    enableMic: !run.muted,
     enableCam: false,
     disconnectOnBotDisconnect: false,
     callbacks: {
@@ -133,7 +134,11 @@ async function start(run, session, lang, onLevel, onError) {
   if (signal.aborted) void client.disconnect().catch(() => {});
 }
 
-function setMuted(muted) { active?.client?.enableMic(!muted); }
+function setMuted(muted) {
+  if (!active) return;
+  active.muted = muted;
+  active.client?.enableMic(!muted);
+}
 
 function disconnect() {
   if (active) close(active, new Error("Voice was stopped."));

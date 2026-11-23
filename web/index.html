@@ -162,8 +162,7 @@ function liveError(msg) { $("liveErr").textContent = msg; $("liveErr").hidden = 
 
 async function connectVoice() {
   if (!window.BirbalVoice) throw new Error("Voice client failed to load.");
-  await window.BirbalVoice.connect({ session: sid, lang, onLevel: setLevel, onError: (msg) => toText(msg) });
-  window.BirbalVoice.setMuted(muted);
+  await window.BirbalVoice.connect({ session: sid, lang, muted, onLevel: setLevel, onError: (msg) => toText(msg) });
 }
 
 async function switchToText(reason) {
