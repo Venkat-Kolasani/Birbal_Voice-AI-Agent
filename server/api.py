@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlencode
@@ -23,16 +24,30 @@ from pydantic import BaseModel, Field  # noqa: E402
 from brain import keys, llm  # noqa: E402
 from brain.auth import COOKIE, configured_auth  # noqa: E402
 from brain.prompts import OPENING_LINE, OPENING_LINES, TALKER_SYSTEM, talker_messages  # noqa: E402
-from brain.cloud import make_store, open_github_issue  # noqa: E402
-from brain.session import Session, SessionStore  # noqa: E402
+from brain.cloud import PilotStorageError, PilotStore, make_store, open_github_issue  # noqa: E402
+from brain.session import Session  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("birbal.api")
 WEB = ROOT / "web"
 EXPORTS = Path(os.getenv("BIRBAL_EXPORTS", ROOT / "exports"))
 
-app = FastAPI(title="Birbal")
 auth = configured_auth()
+DATA = Path(os.getenv("BIRBAL_DATA", ROOT / "data" / "sessions"))
+store = PilotStore(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"]) if auth else make_store(DATA)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    autosave = asyncio.create_task(store.autosave())
+    try:
+        yield
+    finally:
+        autosave.cancel()
+        await asyncio.gather(autosave, return_exceptions=True)
+
+
+app = FastAPI(title="Birbal", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -65,11 +80,11 @@ async def private_pilot(request: Request, call_next):
     return response
 
 
-@app.on_event("startup")
-async def _autosave():
-    asyncio.create_task(store.autosave())
-DATA = Path(os.getenv("BIRBAL_DATA", ROOT / "data" / "sessions"))
-store = SessionStore(DATA) if auth else make_store(DATA)
+@app.exception_handler(PilotStorageError)
+async def storage_unavailable(request: Request, error: PilotStorageError):
+    return JSONResponse({"detail": "Interview storage is unavailable. Try again shortly."}, status_code=503)
+
+
 _tasks: dict[str, asyncio.Task] = {}  # replay / voice task per session
 
 Audience = Literal["me", "builders", "everyone"]
@@ -89,11 +104,27 @@ class EditIn(BaseModel):
     problem: str
 
 
-def _get(s: str, request: Request) -> Session:
-    sess = store.get(s)
-    if sess is None or sess.owner_id != request.state.owner:
+async def _get(s: str, request: Request) -> Session:
+    owner = request.state.owner
+    sess = await run_in_threadpool(store.get_owned, s, owner) if auth else store.get(s)
+    if sess is None or sess.owner_id != owner:
         raise HTTPException(404, "Interview not found. Start a new one.")
     return sess
+
+
+async def _save(sess: Session, *, accepted_turn: bool = False) -> None:
+    if not auth:
+        store.save(sess)
+        return
+    try:
+        await store.persist(sess)
+    except PilotStorageError as exc:
+        if accepted_turn:
+            raise HTTPException(
+                503, "Your answer has not been saved yet. Keep this interview open while Birbal retries.",
+                headers={"Birbal-Save-Pending": "1"},
+            ) from exc
+        raise
 
 
 def _cancel(sid: str) -> None:
@@ -202,7 +233,7 @@ def health():
 
 @app.get("/api/sessions")
 def sessions(request: Request):
-    return store.list() if request.state.owner is None else []
+    return store.list_owned(request.state.owner) if auth else store.list()
 
 
 Lang = Literal["auto", "en", "hi", "kn"]
@@ -216,6 +247,12 @@ async def start(request: Request, mode: Literal["text", "voice", "demo"] = "text
     sess.start(mode, lang)
     if mode == "text":  # in voice mode the bot speaks the opening and records it itself
         sess.add_birbal(OPENING_LINES.get(lang, OPENING_LINE))
+    if auth:
+        try:
+            await _save(sess)
+        except PilotStorageError:
+            store.live.pop(sess.id, None)
+            raise
     if mode == "demo":
         _tasks[sess.id] = asyncio.create_task(_replay(sess))
         await asyncio.sleep(0.05)
@@ -228,14 +265,15 @@ async def _replay(sess: Session, pace: float = 1.0):
 
 
 @app.get("/api/state")
-def state(s: str, request: Request):
-    return _get(s, request).state()
+async def state(s: str, request: Request):
+    sess = await _get(s, request)
+    return {**sess.state(), "save_pending": sess.save_failed}
 
 
 @app.post("/api/mode")
 async def switch_mode(s: str, mode: Literal["text", "voice"], request: Request):
     """Switch mid-interview (e.g. mic fails -> keep going by typing). Same session, same transcript."""
-    sess = _get(s, request)  # the browser's pc.close() already stops the voice pipeline cleanly
+    sess = await _get(s, request)  # the browser's pc.close() already stops the voice pipeline cleanly
     if auth and mode != "text":
         raise HTTPException(404, "Voice is disabled in the private pilot.")
     sess.mode = mode
@@ -247,11 +285,13 @@ async def switch_mode(s: str, mode: Literal["text", "voice"], request: Request):
 @app.post("/api/turn")
 async def turn(s: str, t: TurnIn, request: Request):
     """Text mode: owner types, Birbal replies."""
-    sess = _get(s, request)
+    sess = await _get(s, request)
     if not llm.available():
         raise HTTPException(503, "No LLM key configured. Add GOOGLE_API_KEY or GROQ_API_KEY to .env.")
     if sess.ended:
         raise HTTPException(409, "This interview has ended. Start a new one.")
+    if auth and (sess.status == "thinking" or sess.save_lock.locked() or sess.save_failed):
+        raise HTTPException(409, "Wait for Birbal to finish saving or replying before sending another answer.")
     sess.add_owner(t.text)
     sess.status = "thinking"
     import bot
@@ -262,16 +302,20 @@ async def turn(s: str, t: TurnIn, request: Request):
         sess.retract_owner()  # the UI restores the text for a retry; don't record it twice
         raise HTTPException(502, "Birbal couldn't reply (LLM error or rate limit). Try again.")
     sess.add_birbal(reply)
+    if auth:
+        await _save(sess, accepted_turn=True)
     return sess.state()
 
 
 @app.post("/api/end")
 async def end(s: str, request: Request):
-    sess = _get(s, request)
+    sess = await _get(s, request)
+    if auth and sess.status == "thinking":
+        raise HTTPException(409, "Wait for Birbal to finish replying before ending the interview.")
     _cancel(s)
     sess.finish()
     await sess.settle()
-    store.save(sess)
+    await _save(sess)
     return sess.state()
 
 
@@ -292,38 +336,42 @@ async def _brief(sess: Session) -> dict:
 
 @app.get("/api/brief")
 async def brief(s: str, request: Request):
-    sess = _get(s, request)
+    sess = await _get(s, request)
     out = await _brief(sess)
     if sess.ended:
-        store.save(sess)  # persist LLM extras once computed
+        await _save(sess)  # persist LLM extras once computed
     return out
 
 
 @app.post("/api/choice")
 async def choice(s: str, c: ChoiceIn, request: Request):
-    sess = _get(s, request)
+    sess = await _get(s, request)
     sess.set_choice(c.span, c.choice)
     if not auth and sess.approved and hasattr(store, "unpost_board"):
         store.unpost_board(sess)  # a changed brief leaves the board until re-approved
     sess.approved = None
-    store.save(sess)
+    await _save(sess)
     return await _brief(sess)
 
 
 @app.post("/api/edit")
 async def edit(s: str, e: EditIn, request: Request):
-    sess = _get(s, request)
+    sess = await _get(s, request)
     if e.problem.strip():
         sess.overrides[e.audience] = e.problem.strip()
     else:  # empty = restore the generated statement
         sess.overrides.pop(e.audience, None)
     sess.approved, sess.share_token = None, None
+    if auth:
+        await _save(sess)
     return await _brief(sess)
 
 
 @app.post("/api/approve")
 async def approve(s: str, request: Request):
-    sess = _get(s, request)
+    sess = await _get(s, request)
+    if auth and not sess.ended:
+        raise HTTPException(409, "End the interview before approving the brief.")
     vs = await sess.brief()
     leaking = [a for a, v in vs.items() if a != "me" and not v.safe]
     if leaking:  # enforced server-side, not just by the disabled button
@@ -331,7 +379,7 @@ async def approve(s: str, request: Request):
     sess.approved = {"at": time.strftime("%Y-%m-%d %H:%M:%S"),
                      "private": {x.span: x.choice or "generalise" for x in sess.ledger.sensitive}}
     if auth:
-        store.save(sess)
+        await _save(sess)
         return await _brief(sess)
     store.mint_share(sess)
     EXPORTS.mkdir(exist_ok=True)
@@ -350,7 +398,7 @@ async def approve(s: str, request: Request):
 
 @app.get("/api/export/{audience}.{fmt}")
 async def export(s: str, audience: Audience, fmt: Literal["md", "json"], request: Request):
-    sess = _get(s, request)
+    sess = await _get(s, request)
     if audience != "me" and not sess.approved:
         raise HTTPException(403, "Approve the brief before exporting shareable versions.")
     v = (await sess.brief())[audience]
@@ -398,7 +446,7 @@ async def offer(body: dict, request: Request):
     import bot
     from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequest
     data = body.get("request_data") or {}
-    sess = _get(str(data.get("session", "")), request)
+    sess = await _get(str(data.get("session", "")), request)
     ok, why = bot.voice_ready(sess.lang)
     if not ok:
         raise HTTPException(503, why)

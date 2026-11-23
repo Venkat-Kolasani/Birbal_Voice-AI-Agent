@@ -75,11 +75,11 @@ class SupabaseAuth:
 
 
 def configured_auth() -> SupabaseAuth | None:
-    mode = os.getenv("BIRBAL_MODE_AUTH", "demo")
+    mode = os.getenv("BIRBAL_AUTH_MODE", "demo")
     if mode == "demo":
         return None
     if mode != "pilot":
-        raise RuntimeError("BIRBAL_MODE_AUTH must be demo or pilot.")
+        raise RuntimeError("BIRBAL_AUTH_MODE must be demo or pilot.")
     names = ("SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "BIRBAL_APP_ORIGIN", "SUPABASE_KEY")
     if missing := [name for name in names if not os.getenv(name)]:
         raise RuntimeError("Private pilot configuration is incomplete: " + ", ".join(missing))

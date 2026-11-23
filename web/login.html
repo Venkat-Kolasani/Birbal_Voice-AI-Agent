@@ -49,10 +49,14 @@ register(emailForm, async () => {
 });
 register(codeForm, async () => {
   await api("/api/auth/verify", { method: "POST", body: { email: email.value, code: code.value } });
-  const next = new URLSearchParams(location.search).get("next") || "/start";
-  const url = new URL(next, location.origin);
-  location.replace(url.origin === location.origin && ["/start", "/review"].includes(url.pathname)
-    ? url.pathname + url.search : "/start");
+  let target = "/start";
+  try {
+    const url = new URL(new URLSearchParams(location.search).get("next") || target, location.origin);
+    if (url.origin === location.origin && ["/start", "/review"].includes(url.pathname)) {
+      target = url.pathname + url.search;
+    }
+  } catch {}
+  location.replace(target);
 });
 byId("changeEmail").onclick = () => {
   code.value = ""; message.textContent = ""; codeForm.hidden = true; emailForm.hidden = false; email.focus();

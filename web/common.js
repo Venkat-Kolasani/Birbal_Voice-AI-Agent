@@ -45,6 +45,7 @@ async function api(path, opts = {}) {
       location.replace("/login?next=" + encodeURIComponent(location.pathname + location.search));
     }
     const error = new Error(typeof data?.detail === "string" ? data.detail : `Request failed (${r.status})`);
+    error.savePending = r.headers.has("Birbal-Save-Pending");
     throw error;
   }
   return data;

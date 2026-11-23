@@ -30,6 +30,8 @@ class Session:
         self.interim = ""  # live partial transcript while the owner is speaking (voice)
         self.share_token: Optional[str] = None
         self.dirty = False  # unsaved changes (autosave picks these up)
+        self.save_failed = False
+        self.save_lock = asyncio.Lock()
         self.extras: dict = {}
         self._extras_turns = -1
         self._elapsed_offset = 0.0  # seconds, for sessions restored from disk

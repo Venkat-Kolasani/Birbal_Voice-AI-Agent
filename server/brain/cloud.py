@@ -1,8 +1,10 @@
 """Supabase session store + problem board + GitHub issue. Each is a thin REST call with the local file store as
 fallback, so a dead network never breaks an interview."""
+import asyncio
 import json
 import logging
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +13,87 @@ import httpx
 from .session import Session, SessionStore
 
 log = logging.getLogger("birbal.cloud")
+
+
+class PilotStorageError(Exception):
+    pass
+
+
+class PilotStore(SessionStore):
+    """Private pilot rows have no file fallback and are keyed by authenticated owner."""
+
+    def __init__(self, url: str, key: str):
+        self.base = url.rstrip("/") + "/rest/v1/pilot_interviews"
+        self.headers = {"apikey": key}
+        # Only legacy JWT service-role keys are used as bearer tokens, not sb_secret_* keys.
+        if not key.startswith("sb_secret_"):
+            self.headers["Authorization"] = f"Bearer {key}"
+        self.live: dict[str, Session] = {}
+
+    def _rows(self, method: str, *, params: dict, **kwargs):
+        try:
+            headers = {**self.headers, "Prefer": "resolution=merge-duplicates,return=minimal"} if method == "POST" else self.headers
+            response = httpx.request(method, self.base, headers=headers, params=params, timeout=5, **kwargs)
+            response.raise_for_status()
+            if method == "GET":
+                rows = response.json()
+                if not isinstance(rows, list):
+                    raise ValueError("Expected rows")
+                return rows
+        except (httpx.HTTPError, ValueError) as exc:
+            log.warning("Private interview storage failed (%s %s)", method, type(exc).__name__)
+            raise PilotStorageError from exc
+
+    @staticmethod
+    def _restore(row: dict) -> Session:
+        return Session.from_dict({**row["data"], "id": row["id"], "owner_id": row["owner_id"]})
+
+    def get_owned(self, sid: str, owner: str) -> Session | None:
+        if len(sid) != 32 or any(ch not in "0123456789abcdef" for ch in sid):
+            return None
+        if live := self.live.get(sid):
+            return live if live.owner_id == owner else None
+        rows = self._rows("GET", params={"owner_id": f"eq.{owner}", "id": f"eq.{sid}",
+                                         "select": "id,owner_id,data"})
+        if not rows:
+            return None
+        return self.live.setdefault(sid, self._restore(rows[0]))
+
+    def list_owned(self, owner: str, limit: int = 8) -> list[dict]:
+        rows = self._rows("GET", params={"owner_id": f"eq.{owner}", "select": "id,owner_id,data",
+                                         "order": "updated_at.desc,id", "limit": str(limit)})
+        return [self._restore(row).summary() for row in rows]
+
+    async def persist(self, session: Session) -> None:
+        if not session.owner_id:
+            raise PilotStorageError
+        async with session.save_lock:
+            data = session.to_dict()
+            data.pop("owner_id")
+            session.dirty = False
+            try:
+                await asyncio.to_thread(
+                    self._rows, "POST", params={"on_conflict": "owner_id,id"},
+                    json={"id": session.id, "owner_id": session.owner_id,
+                          "updated_at": datetime.now(UTC).isoformat(), "data": data},
+                )
+            except (PilotStorageError, asyncio.CancelledError):
+                session.dirty = session.save_failed = True
+                raise
+            session.save_failed = False
+
+    async def autosave(self, every: float = 5.0) -> None:
+        while True:
+            await asyncio.sleep(every)
+            await self.flush_dirty()
+
+    async def flush_dirty(self) -> None:
+        for session in list(self.live.values()):
+            if session.dirty and session.status != "thinking":
+                try:
+                    await self.persist(session)
+                except PilotStorageError:
+                    pass
 
 
 class SupabaseStore(SessionStore):
