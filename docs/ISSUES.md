@@ -106,9 +106,13 @@ Template:
 - Pipecat 1.12.0 emits `disconnected` inside `renegotiate(restart_pc=True)`. The interview worker cancels on that event, so sending a new SDP answer would leave the browser with no pipeline.
 - Reject that restart with `409 Voice connection lost. Continue by typing or start voice again.`, release the peer, and preserve the interview for typing or a new connection.
 
-## ISS-017 — First browser start incorrectly reported no microphone [fixed; retest pending]
+## ISS-017 — First browser start incorrectly reported no microphone [resolved]
 - Browser displayed `No microphone available. You can continue by typing.` before signaling. The SDK can return from device initialization before it publishes the local track.
-- Treat SDK microphone errors as authoritative and use track events for cleanup; no synchronous track-presence gate before connecting.
+- Treat SDK microphone errors as authoritative. Browser voice opened after removing the early check against the default manager.
+
+## ISS-018 — Daily call-object reuse exposes the next mic to old listeners [fixed; retest pending]
+- Resuming voice can reuse the same Daily call object. A closed attempt's track callback can run for the new mic and stop it.
+- Use Pipecat's per-attempt `WavMediaManager`, and stop only tracks from that manager.
 
 ## Known risks to watch (not yet issues)
 - flash-lite daily quota unknown; if it 429s mid-event, Groq carries text mode (8K TPM is enough for typed turns and the Scribe) and voice degrades to typing.

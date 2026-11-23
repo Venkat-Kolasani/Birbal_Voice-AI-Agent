@@ -12,7 +12,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function setup({ delayTrack = false } = {}) {
+function setup({ hasMic = true } = {}) {
   const timers = new Map();
   const permission = deferred(), requestedMic = deferred();
   const handshake = deferred(), offered = deferred();
@@ -22,21 +22,32 @@ function setup({ delayTrack = false } = {}) {
     callbacks.onTrackStarted(mic, { local: true });
   };
   const window = { location: { href: "https://birbal.test/start" }, addEventListener() {} };
+  class Media {
+    tracks() { return { local: { audio: this.mic } }; }
+    async disconnect() {}
+  }
+  class Transport {
+    constructor(options) { this.media = options.mediaManager; }
+  }
   class Client {
-    constructor(options) { callbacks = options.callbacks; }
+    constructor(options) { callbacks = options.callbacks; this.media = options.transport.media; }
     setLogLevel() {}
     async initDevices() {
       requestedMic.resolve();
       await permission.promise;
-      if (!delayTrack) publishMic();
+      if (hasMic) {
+        publishMic();
+        this.media.mic = mic;
+      }
     }
-    tracks() { return { local: { audio: mic } }; }
     connect(params) { offered.resolve(params); return handshake.promise; }
     async disconnect() { disconnects++; callbacks.onDisconnected(); }
   }
   vm.runInNewContext(source + "\nloadSDK = fakeSDK;", {
     window, AbortController, URL, Error,
-    fakeSDK: async () => [{ PipecatClient: Client, LogLevel: { WARN: 2 } }, { SmallWebRTCTransport: class {} }],
+    fakeSDK: async () => [{ PipecatClient: Client, LogLevel: { WARN: 2 } }, {
+      SmallWebRTCTransport: Transport, WavMediaManager: Media,
+    }],
     fetch: async (url, options) => {
       signal = options.signal;
       return { ok: true, json: async () => ({ ready: true, ice: [] }) };
@@ -46,7 +57,7 @@ function setup({ delayTrack = false } = {}) {
     clearTimeout: (timer) => timers.delete(timer),
   });
   return {
-    client: window.BirbalVoice, permission, requestedMic, offered, handshake, publishMic,
+    client: window.BirbalVoice, permission, requestedMic, offered, handshake,
     denyMic: () => callbacks.onDeviceError({ devices: ["mic"] }),
     loseConnection: () => callbacks.onDisconnected(),
     fireTimer: (ms) => {
@@ -80,7 +91,7 @@ test("unanswered permission times out and releases media even if granted later",
 });
 
 test("waits for bot-ready and reports loss once for the current interview", async () => {
-  const t = setup({ delayTrack: true });
+  const t = setup();
   t.permission.resolve();
   const errors = [];
   let connected = false;
@@ -90,7 +101,6 @@ test("waits for bot-ready and reports loss once for the current interview", asyn
   assert.equal(webrtcRequestParams.endpoint, "https://birbal.test/api/offer");
   assert.equal(webrtcRequestParams.requestData.session, "fixture");
   assert.equal(connected, false);
-  t.publishMic();
   t.handshake.resolve();
   await connecting;
   t.loseConnection();
@@ -106,4 +116,11 @@ test("a microphone device error ends the attempt without waiting for negotiation
   t.denyMic();
   await assert.rejects(connecting, /Mic blocked or unavailable/);
   t.permission.resolve();
+});
+
+test("initialization without a microphone is rejected before negotiation", async () => {
+  const t = setup({ hasMic: false });
+  const connecting = t.client.connect({ session: "fixture" });
+  t.permission.resolve();
+  await assert.rejects(connecting, /Mic blocked or unavailable/);
 });

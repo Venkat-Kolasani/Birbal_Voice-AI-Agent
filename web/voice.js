@@ -8,10 +8,14 @@ function loadSDK() {
   ]);
 }
 
-function release(client) {
-  if (!client) return;
-  client.tracks().local.audio?.stop();
-  void client.disconnect().catch(() => {});
+function release(run) {
+  if (!run.client) return;
+  run.mic?.stop();
+  run.media.tracks().local.audio?.stop();
+  void run.client.disconnect()
+    .catch(() => {})
+    .then(() => run.media.disconnect())
+    .catch(() => {});
 }
 
 function close(run, reason) {
@@ -20,8 +24,7 @@ function close(run, reason) {
   run.abort.abort(reason);
   run.audio.pause();
   run.audio.srcObject = null;
-  run.mic?.stop();
-  release(run.client);
+  release(run);
 }
 
 async function connect({ session, lang = "auto", onLevel = () => {}, onError = () => {} } = {}) {
@@ -50,8 +53,10 @@ async function start(run, session, lang, onLevel, onError) {
   if (!response.ok) throw new Error("Voice is unavailable.");
   const cfg = await response.json();
   if (!cfg.ready) throw new Error(cfg.why || "Voice is unavailable.");
-  const [{ PipecatClient, LogLevel }, { SmallWebRTCTransport }] = await loadSDK();
+  const [{ PipecatClient, LogLevel }, { SmallWebRTCTransport, WavMediaManager }] = await loadSDK();
   signal.throwIfAborted();
+  // Each attempt owns its media; the default Daily manager may reuse a call object.
+  run.media = new WavMediaManager();
 
   const fail = (message) => {
     if (active !== run) return;
@@ -60,7 +65,7 @@ async function start(run, session, lang, onLevel, onError) {
   };
   const disconnected = () => fail("Voice connection lost.");
   const client = run.client = new PipecatClient({
-    transport: new SmallWebRTCTransport({ iceServers: cfg.ice }),
+    transport: new SmallWebRTCTransport({ iceServers: cfg.ice, mediaManager: run.media }),
     enableMic: true,
     enableCam: false,
     disconnectOnBotDisconnect: false,
@@ -91,13 +96,14 @@ async function start(run, session, lang, onLevel, onError) {
       throw new Error(MIC_ERROR);
     }
     signal.throwIfAborted();
+    if (!run.media.tracks().local.audio) throw new Error(MIC_ERROR);
     await client.connect({ webrtcRequestParams: {
       endpoint: new URL("/api/offer", window.location.href).href,
       requestData: { session },
     } });
   } finally {
     // Browsers can grant microphone access after a timed-out permission prompt.
-    if (signal.aborted) release(client);
+    if (signal.aborted) release(run);
   }
 }
 
