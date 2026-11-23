@@ -123,6 +123,7 @@ Template:
 ## ISS-020 — Voice resume may race teardown or restore an enabled mic [resolved]
 - A quick return to voice could get `409 Voice is already connecting or active for this interview.` while the previous peer closed. A fresh offer now waits briefly for a stopped peer to release its slot, without delaying typing or overlapping the peers.
 - A muted owner could reconnect with an enabled track until signaling completed. The replacement track starts disabled before it is handed to Pipecat.
+- A queued reconnect could override a newer request to keep typing. Resuming now checks whether the owner switched to typing again during cleanup.
 
 ## Known risks to watch (not yet issues)
 - flash-lite daily quota unknown; if it 429s mid-event, Groq carries text mode (8K TPM is enough for typed turns and the Scribe) and voice degrades to typing.

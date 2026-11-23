@@ -202,8 +202,10 @@ async def switch_mode(s: str, mode: Literal["text", "voice"]):
     if mode == "voice":
         if not run or not run.task or run.stop.is_set() or sess.status == "error":
             raise HTTPException(409, "Connect voice before switching to it.")
-    elif sess.mode == "text" and not run:
-        return sess.state()
+    else:
+        sess.voice_intent += 1
+        if sess.mode == "text" and not run:
+            return sess.state()
     sess.mode = mode
     if mode == "text":
         _stop_voice(s)
@@ -420,10 +422,13 @@ async def offer(body: VoiceOffer):
     sess = _get(body.request_data.session)
     existing = _voice_runs.get(sess.id)
     if existing and existing.stop.is_set() and not body.pc_id and not sess.ended:
+        voice_intent = sess.voice_intent
         try:
             await asyncio.wait_for(existing.released.wait(), timeout=VOICE_HANDOFF_SECONDS)
         except TimeoutError:
             raise HTTPException(409, "The previous voice call is still closing. Try again shortly.") from None
+        if sess.voice_intent != voice_intent:
+            raise HTTPException(409, "Voice resume was canceled by switching to typing.")
     if sess.ended or sess.mode == "demo" or (sess.status == "thinking" and sess.mode == "text"):
         raise HTTPException(409, "This interview cannot connect to voice right now.")
     ok, why = bot.voice_ready(sess.lang)

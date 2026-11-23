@@ -24,6 +24,7 @@ class Session:
         self.id = sid or uuid.uuid4().hex[:10]
         self.created = datetime.now().isoformat(timespec="seconds")
         self.mode = "text"
+        self.voice_intent = 0
         self.lang = "auto"
         self.last_error = ""
         self.interim = ""  # live partial transcript while the owner is speaking (voice)

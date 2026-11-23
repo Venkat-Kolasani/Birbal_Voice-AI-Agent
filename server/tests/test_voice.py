@@ -111,7 +111,8 @@ def test_switching_during_pending_offer_does_not_restart_voice(voice):
     asyncio.run(check())
 
 
-def test_immediate_resume_waits_for_previous_peer_cleanup(voice, monkeypatch):
+@pytest.mark.parametrize("cancel_resume", [False, True])
+def test_immediate_resume_waits_for_previous_peer_cleanup(voice, monkeypatch, cancel_resume):
     monkeypatch.setattr(api, "VOICE_MAX_CONCURRENT", 1)
 
     async def check():
@@ -133,8 +134,15 @@ def test_immediate_resume_waits_for_previous_peer_cleanup(voice, monkeypatch):
             resume = asyncio.create_task(offer(c, sid))
             await asyncio.sleep(0)
             assert not resume.done() and len(voice.peers) == 1
+            if cancel_resume:
+                assert (await c.post(f"/api/mode?s={sid}&mode=text")).status_code == 200
             finish.set()
-            assert (await asyncio.wait_for(resume, 1)).status_code == 200
+            result = await asyncio.wait_for(resume, 1)
+            if cancel_resume:
+                assert result.status_code == 409 and "canceled" in result.json()["detail"]
+                assert api.store.get(sid).mode == "text" and sid not in api._voice_runs
+                return
+            assert result.status_code == 200
             assert voice.peers[0].closed and api._voice_runs[sid] is not old
             new = api._voice_runs[sid]
             await c.post(f"/api/end?s={sid}")
