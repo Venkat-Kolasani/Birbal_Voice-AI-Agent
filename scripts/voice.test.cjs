@@ -16,56 +16,61 @@ function setup({ hasMic = true } = {}) {
   const timers = new Map();
   const permission = deferred(), requestedMic = deferred();
   const handshake = deferred(), offered = deferred();
-  let stopped = false, mic, callbacks, signal, id = 0, disconnects = 0;
-  const publishMic = () => {
-    mic = { kind: "audio", stop: () => { stopped = true; } };
-    callbacks.onTrackStarted(mic, { local: true });
-  };
+  let stopped = false, meterClosed = false, meterCancelled = false;
+  let callbacks, signal, id = 0;
+  const mic = { enabled: true, getSettings: () => ({}), stop: () => { stopped = true; } };
+  const tracks = hasMic ? [mic] : [];
   const window = { location: { href: "https://birbal.test/start" }, addEventListener() {} };
-  class Media {
-    tracks() { return { local: { audio: this.mic } }; }
-    async disconnect() {}
-  }
   class Transport {
     constructor(options) { this.media = options.mediaManager; }
   }
   class Client {
-    constructor(options) { callbacks = options.callbacks; this.media = options.transport.media; }
-    setLogLevel() {}
-    async initDevices() {
-      requestedMic.resolve();
-      await permission.promise;
-      if (hasMic) {
-        publishMic();
-        this.media.mic = mic;
-      }
+    constructor(options) {
+      callbacks = options.callbacks;
+      this.media = options.transport.media;
+      this.media.setClientOptions(options);
     }
+    setLogLevel() {}
+    initDevices() { return this.media.initialize(); }
     connect(params) { offered.resolve(params); return handshake.promise; }
-    async disconnect() { disconnects++; callbacks.onDisconnected(); }
+    async disconnect() { await this.media.disconnect(); callbacks.onDisconnected(); }
   }
   vm.runInNewContext(source + "\nloadSDK = fakeSDK;", {
     window, AbortController, URL, Error,
     fakeSDK: async () => [{ PipecatClient: Client, LogLevel: { WARN: 2 } }, {
-      SmallWebRTCTransport: Transport, WavMediaManager: Media,
+      SmallWebRTCTransport: Transport,
     }],
+    navigator: { mediaDevices: { getUserMedia: async () => {
+      requestedMic.resolve();
+      await permission.promise;
+      return { getAudioTracks: () => tracks, getTracks: () => tracks };
+    } } },
     fetch: async (url, options) => {
       signal = options.signal;
       return { ok: true, json: async () => ({ ready: true, ice: [] }) };
     },
     Audio: class { pause() {} },
+    AudioContext: class {
+      createAnalyser() { return {}; }
+      createMediaStreamSource() { return { connect() {} }; }
+      async close() { meterClosed = true; }
+    },
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => { meterCancelled = true; },
     setTimeout: (callback, ms) => { timers.set(++id, { callback, ms }); return id; },
     clearTimeout: (timer) => timers.delete(timer),
   });
   return {
     client: window.BirbalVoice, permission, requestedMic, offered, handshake,
-    denyMic: () => callbacks.onDeviceError({ devices: ["mic"] }),
+    endMic: () => mic.onended(),
     loseConnection: () => callbacks.onDisconnected(),
     fireTimer: (ms) => {
       const timer = [...timers.values()].find((t) => t.ms === ms);
       assert.ok(timer);
       timer.callback();
     },
-    cleaned: () => stopped && disconnects > 0 && signal.aborted,
+    cleaned: () => stopped && signal.aborted,
+    meterReleased: () => meterClosed && meterCancelled,
   };
 }
 
@@ -77,6 +82,7 @@ test("refused offer releases the microphone", async () => {
   t.handshake.reject(new Error("Voice is busy."));
   await assert.rejects(connecting, /Voice is busy/);
   assert.equal(t.cleaned(), true);
+  assert.equal(t.meterReleased(), true);
 });
 
 test("unanswered permission times out and releases media even if granted later", async () => {
@@ -113,9 +119,8 @@ test("a microphone device error ends the attempt without waiting for negotiation
   const t = setup();
   const connecting = t.client.connect({ session: "fixture" });
   await t.requestedMic.promise;
-  t.denyMic();
+  t.permission.reject(new Error("NotAllowedError"));
   await assert.rejects(connecting, /Mic blocked or unavailable/);
-  t.permission.resolve();
 });
 
 test("initialization without a microphone is rejected before negotiation", async () => {
@@ -123,4 +128,18 @@ test("initialization without a microphone is rejected before negotiation", async
   const connecting = t.client.connect({ session: "fixture" });
   t.permission.resolve();
   await assert.rejects(connecting, /Mic blocked or unavailable/);
+});
+
+test("removing the active microphone releases audio and reports a failure", async () => {
+  const t = setup();
+  t.permission.resolve();
+  const errors = [];
+  const connecting = t.client.connect({ session: "fixture", onError: (message) => errors.push(message) });
+  await t.offered.promise;
+  t.handshake.resolve();
+  await connecting;
+  t.endMic();
+  assert.deepEqual(errors, ["Microphone disconnected."]);
+  assert.equal(t.cleaned(), true);
+  assert.equal(t.meterReleased(), true);
 });

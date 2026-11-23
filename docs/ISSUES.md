@@ -112,7 +112,11 @@ Template:
 
 ## ISS-018 — Daily call-object reuse exposes the next mic to old listeners [fixed; retest pending]
 - Resuming voice can reuse the same Daily call object. A closed attempt's track callback can run for the new mic and stop it.
-- Use Pipecat's per-attempt `WavMediaManager`, and stop only tracks from that manager.
+- Each attempt captures its own native microphone track and hands it to Pipecat for transport.
+
+## ISS-019 — WavMediaManager adds unused audio processing and incomplete cleanup [removed]
+- Review flagged a fixed-rate recorder that can fail at initialization on Firefox, no sender update on mic replacement, and retained listeners and audio contexts after close.
+- Capture a native microphone without audio-rate conversion. If it ends, release the connection and fall back to typing. Stop the track and close Birbal's level meter on every cleanup path.
 
 ## Known risks to watch (not yet issues)
 - flash-lite daily quota unknown; if it 429s mid-event, Groq carries text mode (8K TPM is enough for typed turns and the Scribe) and voice degrades to typing.

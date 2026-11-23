@@ -8,23 +8,54 @@ function loadSDK() {
   ]);
 }
 
-function release(run) {
-  if (!run.client) return;
-  run.mic?.stop();
-  run.media.tracks().local.audio?.stop();
-  void run.client.disconnect()
-    .catch(() => {})
-    .then(() => run.media.disconnect())
-    .catch(() => {});
-}
-
 function close(run, reason) {
   if (active !== run) return;
   active = null;
   run.abort.abort(reason);
   run.audio.pause();
   run.audio.srcObject = null;
-  release(run);
+  void run.media?.disconnect();
+  void run.client?.disconnect().catch(() => {});
+}
+
+// Pipecat owns WebRTC; this mic-only adapter owns just the browser track.
+function microphone(stream, onLevel, onEnded) {
+  const track = stream.getAudioTracks()[0];
+  track.onended = onEnded;
+  let callbacks, meter, frame;
+  try {
+    meter = new AudioContext();
+    const analyser = meter.createAnalyser();
+    analyser.fftSize = 256;
+    meter.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    const tick = () => {
+      analyser.getByteTimeDomainData(samples);
+      let peak = 0;
+      for (const sample of samples) peak = Math.max(peak, Math.abs(sample - 128));
+      onLevel(Math.min(1, peak / 60));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+  } catch { /* The microphone meter is optional. */ }
+  return {
+    setClientOptions: (options) => { callbacks = options.callbacks; },
+    initialize: async () => callbacks.onMicUpdated?.({ deviceId: track.getSettings().deviceId || "default" }),
+    connect: async () => {},
+    disconnect: async () => {
+      track.onended = null;
+      track.stop();
+      cancelAnimationFrame(frame);
+      if (meter) void meter.close().catch(() => {});
+      meter = null;
+    },
+    tracks: () => ({ local: { audio: track } }),
+    mediaSupport: { mic: true, cam: false, screenShare: false },
+    enableMic: (enabled) => { track.enabled = enabled; },
+    get isMicEnabled() { return track.enabled; },
+    isCamEnabled: false,
+    supportsScreenShare: false,
+  };
 }
 
 async function connect({ session, lang = "auto", onLevel = () => {}, onError = () => {} } = {}) {
@@ -53,10 +84,8 @@ async function start(run, session, lang, onLevel, onError) {
   if (!response.ok) throw new Error("Voice is unavailable.");
   const cfg = await response.json();
   if (!cfg.ready) throw new Error(cfg.why || "Voice is unavailable.");
-  const [{ PipecatClient, LogLevel }, { SmallWebRTCTransport, WavMediaManager }] = await loadSDK();
+  const [{ PipecatClient, LogLevel }, { SmallWebRTCTransport }] = await loadSDK();
   signal.throwIfAborted();
-  // Each attempt owns its media; the default Daily manager may reuse a call object.
-  run.media = new WavMediaManager();
 
   const fail = (message) => {
     if (active !== run) return;
@@ -64,6 +93,20 @@ async function start(run, session, lang, onLevel, onError) {
     if (run.ready) onError(message);
   };
   const disconnected = () => fail("Voice connection lost.");
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch {
+    throw new Error(MIC_ERROR);
+  }
+  if (signal.aborted || !stream.getAudioTracks().length) {
+    stream.getTracks().forEach((track) => track.stop());
+    signal.throwIfAborted();
+    throw new Error(MIC_ERROR);
+  }
+  run.media = microphone(stream, onLevel, () => fail("Microphone disconnected."));
   const client = run.client = new PipecatClient({
     transport: new SmallWebRTCTransport({ iceServers: cfg.ice, mediaManager: run.media }),
     enableMic: true,
@@ -73,38 +116,21 @@ async function start(run, session, lang, onLevel, onError) {
       onDisconnected: disconnected,
       onBotDisconnected: disconnected,
       onTransportStateChanged: (state) => { if (state === "error") disconnected(); },
-      onDeviceError: (error) => { if (error.devices.includes("mic")) fail(MIC_ERROR); },
-      onLocalAudioLevel: (level) => { if (!signal.aborted) onLevel(level); },
       onTrackStarted: (track, participant) => {
-        if (track.kind !== "audio") return;
-        if (participant?.local) {
-          if (signal.aborted) track.stop();
-          else run.mic = track;
-          return;
-        }
-        if (signal.aborted) return;
+        if (signal.aborted || participant?.local || track.kind !== "audio") return;
         run.audio.srcObject = new MediaStream([track]);
         run.audio.play().catch(() => fail("Your browser blocked Birbal's audio."));
       },
     },
   });
   client.setLogLevel(LogLevel.WARN);
-  try {
-    try {
-      await client.initDevices();
-    } catch {
-      throw new Error(MIC_ERROR);
-    }
-    signal.throwIfAborted();
-    if (!run.media.tracks().local.audio) throw new Error(MIC_ERROR);
-    await client.connect({ webrtcRequestParams: {
-      endpoint: new URL("/api/offer", window.location.href).href,
-      requestData: { session },
-    } });
-  } finally {
-    // Browsers can grant microphone access after a timed-out permission prompt.
-    if (signal.aborted) release(run);
-  }
+  await client.initDevices();
+  signal.throwIfAborted();
+  await client.connect({ webrtcRequestParams: {
+    endpoint: new URL("/api/offer", window.location.href).href,
+    requestData: { session },
+  } });
+  if (signal.aborted) void client.disconnect().catch(() => {});
 }
 
 function setMuted(muted) { active?.client?.enableMic(!muted); }
