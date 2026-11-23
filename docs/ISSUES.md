@@ -110,13 +110,15 @@ Template:
 - Browser displayed `No microphone available. You can continue by typing.` before signaling. The SDK can return from device initialization before it publishes the local track.
 - Treat SDK microphone errors as authoritative. Browser voice opened after removing the early check against the default manager.
 
-## ISS-018 — Daily call-object reuse exposes the next mic to old listeners [fixed; retest pending]
+## ISS-018 — Daily call-object reuse exposes the next mic to old listeners [resolved in Chrome]
 - Resuming voice can reuse the same Daily call object. A closed attempt's track callback can run for the new mic and stop it.
 - Each attempt captures its own native microphone track and hands it to Pipecat for transport.
+- In Chrome, switching to typing ended the old track and resuming voice committed a new answer with a different live track.
 
 ## ISS-019 — WavMediaManager adds unused audio processing and incomplete cleanup [removed]
 - Review flagged a fixed-rate recorder that can fail at initialization on Firefox, no sender update on mic replacement, and retained listeners and audio contexts after close.
 - Capture a native microphone without audio-rate conversion. If it ends, release the connection and fall back to typing. Stop the track and close Birbal's level meter on every cleanup path.
+- Chrome permission revocation showed `Microphone disconnected. You can continue by typing.` and released the mic and peer. Firefox and physical unplug still need testing.
 
 ## Known risks to watch (not yet issues)
 - flash-lite daily quota unknown; if it 429s mid-event, Groq carries text mode (8K TPM is enough for typed turns and the Scribe) and voice degrades to typing.

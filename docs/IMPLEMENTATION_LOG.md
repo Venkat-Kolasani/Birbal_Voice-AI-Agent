@@ -117,3 +117,8 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 - `web/voice.js`, `web/index.html`: use the Pipecat SDK, release the mic on failure or navigation, and keep the interview open for typing when voice fails.
 - Verified: `uv run --frozen pytest -q` (60 passed, including a real local WebRTC and RTVI handshake using provider doubles); `node --test scripts/voice.test.cjs` (3 passed with a client double); JavaScript syntax and `git diff --check` pass.
 - Next: test live browser microphone, playback and barge-in, then TURN on a restricted network. Auth, storage, privacy, sharing and deployment are unchanged.
+
+## 2026-11-23 22:32 IST — Per-attempt microphone ownership
+- `web/voice.js` and `scripts/voice.test.cjs`: keep Pipecat signaling, capture one native mic per attempt, and release its track and optional meter on close. An ended track returns the same interview to typing.
+- Verified: `uv run --frozen pytest -q` (60 passed); `node --test scripts/voice.test.cjs` (6 passed). Chrome with simulated providers verified audio, mute, typing, resumed voice, and recovery after native permission revocation.
+- Next: live providers and barge-in, Firefox, physical device removal, and hosted TURN. Add authenticated voice admission and preserve final in-flight speech before a company rollout.
