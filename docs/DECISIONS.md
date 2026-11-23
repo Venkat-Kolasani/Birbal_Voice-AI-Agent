@@ -66,7 +66,7 @@ Template:
   - **Controller note:** `ControllerNote` intercepts the downstream `LLMContextFrame` and swaps last turn's note for a fresh one via `context.set_messages` (`bot.rewrite`). The Gemini adapter turns non-initial developer messages into `user` role (`gemini_adapter.py` ~l.480).
   - **Opening line:** `TTSSpeakFrame(OPENING_LINE)`. Its `append_to_context` defaults to True, so there is no LLM call and no manual `add_message`.
   - **Transport:** a `SmallWebRTCRequestHandler` runs in-process in `api.py` (`POST`/`PATCH /api/offer`), so the bot shares the single `Session`.
-  - **Browser client:** a minimal client in `web/voice.js`. It does not use the prebuilt client, to avoid a CDN dependency.
+  - **Browser client (superseded by D-018):** a minimal client in `web/voice.js`. It does not use the prebuilt client, to avoid a CDN dependency.
   - **STT:** `DeepgramSTTService.Settings(model="nova-3", language="multi")` for Hinglish.
 - Alternatives: the Pipecat runner process with the prebuilt `/client` was rejected; it needs a second process and can't share the session.
 - Consequence: verify first thing once keys exist, as gate step 1. Unknowns: whether Deepgram accepts `language="multi"` via Settings, Gemini handling of consecutive user messages, and barge-in feel.
@@ -176,6 +176,7 @@ Template:
 - Benchmark (Groq gpt-oss-120b, 28 labelled sentences): **27/28 = 96%** grade accuracy; the one miss graded an opinion ("drivers are lazy") as Seen.
 
 ## D-018 — Bound voice sessions without changing the interview pipeline (2026-11-23)
+- Supersedes the browser-client decision in D-008; the in-process server pipeline remains.
 - Use the maintained [Pipecat Small WebRTC browser transport](https://docs.pipecat.ai/client/js/transports/small-webrtc) for signaling and trickle ICE instead of maintaining WebRTC code. Load pinned SDK releases on demand from a CDN to keep the static no-build UI; serve a lockfile-pinned bundle from the app before a restricted deployment.
 - Give each voice attempt its own native mic track. The default Daily manager can share device listeners across attempts, and the Wav manager adds an unneeded recorder and audio contexts. If the mic track ends, fall back to typing instead of silently replacing it.
 - Keep the cascade and asynchronous Scribe. Borrow explicit session teardown and transcript continuity from [LiveKit Agents' session lifecycle](https://docs.livekit.io/agents/logic/sessions/), not its runtime. A provider failure, expired reply or exhausted connection falls back to typing in the same interview. A brief interruption may recover; a full peer restart requires the user to resume voice from text.
