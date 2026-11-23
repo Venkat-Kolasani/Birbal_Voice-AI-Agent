@@ -239,6 +239,32 @@ def test_lifespan_saves_notes_after_last_turn(pilot, monkeypatch):
     assert pilot.remote.rows[(ALICE, sid)]["data"]["ledger"]["unknowns"][0]["question"] == "How long?"
 
 
+def test_shutdown_saves_notes_that_arrive_during_the_final_write(pilot, monkeypatch):
+    active_store = api.store
+
+    async def check():
+        sess = active_store.create(ALICE)
+        sess.start()
+        sess.add_birbal("What happened?")
+        persist = active_store.persist
+        writes = 0
+
+        async def complete_note_after_write(session):
+            nonlocal writes
+            await persist(session)
+            writes += 1
+            if writes == 1:
+                session.ledger.unknowns.append(Unknown(dimension="impact", question="How long?", lead="The team"))
+                session.dirty = True
+
+        monkeypatch.setattr(active_store, "persist", complete_note_after_write)
+        await active_store.drain()
+        assert writes == 2
+        assert pilot.remote.rows[(ALICE, sess.id)]["data"]["ledger"]["unknowns"][0]["question"] == "How long?"
+
+    asyncio.run(check())
+
+
 def test_resume_continues_pilot_clock_until_end(pilot, monkeypatch):
     client = pilot.client(ALICE)
     sid = client.post("/api/start").json()["id"]

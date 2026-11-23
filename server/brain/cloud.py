@@ -97,11 +97,11 @@ class PilotStore:
             except TimeoutError:
                 await self.flush_dirty(stop=stop)
 
-    async def flush_dirty(self, *, stop: asyncio.Event | None = None) -> None:
+    async def flush_dirty(self, *, stop: asyncio.Event | None = None, retry_failed: bool = True) -> None:
         for session in list(self.live.values()):
             if stop and stop.is_set():
                 break
-            if session.dirty and session.status != "thinking":
+            if session.dirty and session.status != "thinking" and (retry_failed or not session.save_failed):
                 try:
                     await self.persist(session)
                 except PilotStorageError:
@@ -112,6 +112,8 @@ class PilotStore:
         try:
             async with asyncio.timeout(10):
                 await self.flush_dirty()
+                while any(s.dirty and not s.save_failed and s.status != "thinking" for s in self.live.values()):
+                    await self.flush_dirty(retry_failed=False)
         except TimeoutError:
             log.warning("Private pilot shutdown reached the save deadline.")
         if any(session.dirty for session in self.live.values()):

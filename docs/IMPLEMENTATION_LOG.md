@@ -121,3 +121,4 @@ Status per module. **Verified** = covered by tests (31 passing) and/or a Chrome 
 - Keep the raw brief view-only, gate redacted downloads, and route the pilot directly to protected interviews.
 - Show the previous transcript until the typed turn commits. Drain late Scribe notes on orderly shutdown and resume the elapsed clock when the owner reopens the interview.
 - Verified: `uv run --frozen pytest -q` (66 passed), browser JavaScript syntax, and `git diff --check`. Hosted email delivery remains unverified.
+- Browser retest passed against synthetic providers, including review permissions and restart recovery. The shutdown drain also now saves notes that finish during the first final write (67 Python tests passed).
