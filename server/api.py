@@ -269,6 +269,8 @@ async def _replay(sess: Session, pace: float = 1.0):
 @app.get("/api/state")
 async def state(s: str, request: Request):
     sess = await _get(s, request)
+    if sess.pre_turn_state is not None:
+        return {**sess.pre_turn_state, "status": "thinking", "save_pending": sess.status != "thinking"}
     return {**sess.state(), "save_pending": sess.save_failed}
 
 
@@ -294,6 +296,8 @@ async def turn(s: str, t: TurnIn, request: Request):
         raise HTTPException(409, "This interview has ended. Start a new one.")
     if auth and (sess.status == "thinking" or sess.save_lock.locked() or sess.save_failed):
         raise HTTPException(409, "Wait for Birbal to finish saving or replying before sending another answer.")
+    if auth:
+        sess.pre_turn_state = sess.state()
     sess.add_owner(t.text)
     sess.status = "thinking"
     import bot
@@ -302,6 +306,7 @@ async def turn(s: str, t: TurnIn, request: Request):
     sess.status = "listening"
     if not reply:
         sess.retract_owner()  # the UI restores the text for a retry; don't record it twice
+        sess.pre_turn_state = None
         raise HTTPException(502, "Birbal couldn't reply (LLM error or rate limit). Try again.")
     sess.add_birbal(reply)
     if auth:
@@ -312,8 +317,8 @@ async def turn(s: str, t: TurnIn, request: Request):
 @app.post("/api/end")
 async def end(s: str, request: Request):
     sess = await _get(s, request)
-    if auth and sess.status == "thinking":
-        raise HTTPException(409, "Wait for Birbal to finish replying before ending the interview.")
+    if auth and (sess.status == "thinking" or sess.save_lock.locked()):
+        raise HTTPException(409, "Wait for Birbal to finish replying or saving before ending the interview.")
     _cancel(s)
     sess.finish()
     await sess.settle()

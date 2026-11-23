@@ -87,6 +87,7 @@ class PilotStore:
                 session.dirty = session.save_failed = True
                 raise
             session.save_failed = False
+            session.pre_turn_state = None
 
     async def autosave(self, every: float = 5.0) -> None:
         while True:

@@ -1,6 +1,8 @@
 import asyncio
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -26,7 +28,7 @@ def pilot(monkeypatch):
     auth = SupabaseAuth(SUPABASE, "publishable-fixture", ORIGIN)
     key = ec.generate_private_key(ec.SECP256R1())
     rows = {}
-    state = SimpleNamespace(failing=False, rows=rows)
+    state = SimpleNamespace(failing=False, rows=rows, before_write=None)
     monkeypatch.setattr(auth.keys, "get_signing_key_from_jwt", lambda _: key.public_key())
 
     def token(owner=ALICE, **overrides):
@@ -47,6 +49,8 @@ def pilot(monkeypatch):
         if state.failing:
             return httpx.Response(503)
         if request.method == "POST":
+            if state.before_write:
+                state.before_write()
             assert request.url.params["on_conflict"] == "owner_id,id"
             assert request.headers["prefer"] == "resolution=merge-duplicates,return=minimal"
             row = json.loads(request.content)
@@ -180,10 +184,37 @@ def test_write_failure_is_visible_and_retried_without_duplicate_answer(pilot):
     result = client.post(f"/api/turn?s={sid}", json={"text": answer})
     assert result.status_code == 503 and result.headers["Birbal-Save-Pending"] == "1"
     assert pilot.remote.rows[(ALICE, sid)]["data"] == start
-    assert client.get(f"/api/state?s={sid}").json()["save_pending"]
+    live = client.get(f"/api/state?s={sid}").json()
+    assert live["save_pending"]
+    assert all(t["text"] != answer for t in live["transcript"])
     assert client.post(f"/api/turn?s={sid}", json={"text": answer}).status_code == 409
     assert client.get("/api/sessions").status_code == 503
     pilot.remote.failing = False
     asyncio.run(api.store.flush_dirty())
     assert not client.get(f"/api/state?s={sid}").json()["save_pending"]
     assert [turn["text"] for turn in pilot.remote.rows[(ALICE, sid)]["data"]["ledger"]["transcript"]].count(answer) == 1
+
+
+def test_poll_shows_only_committed_turns_during_save(pilot):
+    client = pilot.client(ALICE)
+    sid = client.post("/api/start").json()["id"]
+    state_path = f"/api/state?s={sid}"
+    committed = client.get(state_path).json()["transcript"]
+    writing, finish = Event(), Event()
+
+    def before_write():
+        writing.set()
+        assert finish.wait(3)
+
+    pilot.remote.before_write = before_write
+    with ThreadPoolExecutor() as pool:
+        result = pool.submit(client.post, f"/api/turn?s={sid}", json={"text": "The form loses a field."})
+        try:
+            assert writing.wait(3)
+            state = client.get(state_path).json()
+            assert state["save_pending"] and state["transcript"] == committed
+        finally:
+            finish.set()
+        assert result.result(timeout=3).status_code == 200
+    state = client.get(state_path).json()
+    assert not state["save_pending"] and len(state["transcript"]) == len(committed) + 2

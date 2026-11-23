@@ -32,6 +32,7 @@ class Session:
         self.dirty = False  # unsaved changes (autosave picks these up)
         self.save_failed = False
         self.save_lock = asyncio.Lock()
+        self.pre_turn_state: dict | None = None
         self.extras: dict = {}
         self._extras_turns = -1
         self._elapsed_offset = 0.0  # seconds, for sessions restored from disk
